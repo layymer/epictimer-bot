@@ -102,7 +102,7 @@ export default {
         });
       }
 
-      // ОБРОБКА КОМАНДИ /status
+      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ ДІАГРАМИ)
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -116,58 +116,95 @@ export default {
           });
         }
 
-        const now = Math.floor(Date.now() / 1000);
-        let fields = [];
-        let titleSuffix = "поточний розклад";
+        // Визначаємо день для перегляду (якщо не вказано — сьогодні)
+        const targetDay = filterDateOpt ? new Date(filterDateOpt) : new Date();
+        targetDay.setHours(0, 0, 0, 0);
+        const startSec = Math.floor(targetDay.getTime() / 1000);
+        const endSec = startSec + 86400; // кінець доби
 
-        // Якщо користувач обрав конкретну дату для фільтрації
-        let filteredResults = results;
-        if (filterDateOpt) {
-          const startOfDay = new Date(filterDateOpt);
-          startOfDay.setHours(0, 0, 0, 0);
-          const startSec = Math.floor(startOfDay.getTime() / 1000);
+        // Фільтруємо босів, чиє вікно зачіпає цей день
+        const activeBosses = results.filter(row => 
+          (row.min_respawn <= endSec && row.max_respawn >= startSec)
+        );
 
-          const endOfDay = new Date(filterDateOpt);
-          endOfDay.setHours(23, 59, 59, 999);
-          const endSec = Math.floor(endOfDay.getTime() / 1000);
-
-          // Залишаємо босів, чиє вікно респавну зачіпає цей день
-          filteredResults = results.filter(row => 
-            (row.min_respawn <= endSec && row.max_respawn >= startSec)
-          );
-
-          titleSuffix = `на дату ${filterDateOpt.split('-').reverse().join('.')}`;
-        }
-
-        if (filteredResults.length === 0) {
+        if (activeBosses.length === 0) {
+          const dateFormatted = targetDay.toLocaleDateString('uk-UA');
           return jsonResponse({
-            content: `📭 Немає респавнів епік-босів на обрану дату (${filterDateOpt}).`
+            content: `📭 Немає респавнів епік-босів на дату **${dateFormatted}**.`
           });
         }
 
-        for (const row of filteredResults) {
-          let statusText = "";
+        // Формуємо дані для діаграми Chart.js
+        const labels = [];
+        const dataIntervals = [];
+        const backgroundColors = [];
+
+        const now = Math.floor(Date.now() / 1000);
+
+        for (const row of activeBosses) {
+          labels.push(row.name);
+
+          // Рахуємо години вікна всередині цієї доби (від 0 до 24)
+          const dayStartOffset = Math.max(0, (row.min_respawn - startSec) / 3600);
+          const dayEndOffset = Math.min(24, (row.max_respawn - startSec) / 3600);
+          
+          dataIntervals.push([Number(dayStartOffset.toFixed(2)), Number(dayEndOffset.toFixed(2))]);
+
+          // Колір залежить від статусу
           if (now >= row.min_respawn && now <= row.max_respawn) {
-            statusText = "🟢 **ВІКНО ВІДКРИТЕ ЗАРАЗ!**";
+            backgroundColors.push('rgba(46, 204, 113, 0.8)'); // Зелений (відкрито зараз)
           } else if (now > row.max_respawn) {
-            statusText = "🔴 **Вікно минуло**";
+            backgroundColors.push('rgba(231, 76, 60, 0.8)');  // Червоний (минуло)
           } else {
-            statusText = `⏳ Очікування (<t:${row.min_respawn}:R>)`;
+            backgroundColors.push('rgba(88, 101, 242, 0.8)');  // Фірмовий фіолетовий Discord (очікування)
           }
-
-          fields.push({
-            name: `⚔️ ${row.name}`,
-            value: `▫️ **З:** <t:${row.min_respawn}:F>\n▫️ **По:** <t:${row.max_respawn}:T>\n▫️ **Статус:** ${statusText}`,
-            inline: false
-          });
         }
+
+        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+
+        // Конфігурація діаграми для QuickChart
+        const chartConfig = {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Вікно респавну (години)',
+              data: dataIntervals,
+              backgroundColor: backgroundColors,
+              borderWidth: 1
+            }]
+          },
+          options: {
+            indexAxis: 'y', // Робить стовпчики горизонтальними
+            scales: {
+              x: {
+                min: 0,
+                max: 24,
+                title: { display: true, text: 'Години доби (00:00 - 24:00)', color: '#333', font: { weight: 'bold' } },
+                ticks: { stepSize: 2 }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              title: { 
+                display: true, 
+                text: `Графік респавнів: ${dateStrFormatted}`, 
+                font: { size: 16, weight: 'bold' } 
+              }
+            }
+          }
+        };
+
+        // Генеруємо посилання на картинку через QuickChart.io
+        const chartUrl = `https://quickchart.io/chart?w=700&h=350&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
 
         return jsonResponse({
           embeds: [
             {
-              title: `📋 Респавн епік-босів (${titleSuffix})`,
+              title: `📊 Діаграма респавну епік-босів`,
+              description: `Дата: **${dateStrFormatted}**\n🟢 Відкрито зараз | 🔵 Очікування | 🔴 Минуло`,
               color: 0x5865F2,
-              fields: fields,
+              image: { url: chartUrl },
               footer: { text: "Lineage 2 Epic Timer" },
               timestamp: new Date().toISOString()
             }
