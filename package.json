@@ -1,0 +1,8 @@
+{
+  "name": "epictimer-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "discord-interactions": "^4.2.0"
+  }
+}
