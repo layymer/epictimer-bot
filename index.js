@@ -39,6 +39,7 @@ export default {
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
+        const dateStrOpt = options?.find(opt => opt.name === 'date')?.value;
 
         const matchedBoss = Object.keys(BOSS_DATA).find(
           b => b.toLowerCase() === bossNameOpt?.toLowerCase()
@@ -50,20 +51,45 @@ export default {
           });
         }
 
-        const now = Math.floor(Date.now() / 1000);
-        let killTimestamp = now;
+        // Жорстка перевірка: якщо вибрано дату, час стає обов'язковим
+        if (dateStrOpt && !timeStrOpt) {
+          return jsonResponse({
+            content: `❌ Якщо ви вказуєте дату, **обов'язково** потрібно вказати й точний час вбивства!`
+          });
+        }
 
-        if (timeStrOpt) {
-          const [hours, minutes] = timeStrOpt.split(':').map(Number);
-          if (!isNaN(hours)) {
-            const d = new Date();
-            d.setHours(hours, isNaN(minutes) ? 0 : minutes, 0, 0);
-            killTimestamp = Math.floor(d.getTime() / 1000);
-            if (killTimestamp > now) {
-              killTimestamp -= 86400; // якщо час у майбутньому — це було вчора
-            }
+        const now = Math.floor(Date.now() / 1000);
+        const targetDate = new Date();
+
+        // 1. Обробка дати з випадаючого меню (формат YYYY-MM-DD)
+        if (dateStrOpt) {
+          const parsed = new Date(dateStrOpt);
+          if (!isNaN(parsed.getTime())) {
+            targetDate.setFullYear(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
           }
         }
+
+        // 2. Обробка часу (з точністю до хвилини)
+        let hours = targetDate.getHours();
+        let minutes = targetDate.getMinutes();
+
+        if (timeStrOpt) {
+          const cleanTime = timeStrOpt.trim().replace('.', ':');
+          if (cleanTime.includes(':')) {
+            const parts = cleanTime.split(':').map(Number);
+            hours = parts[0];
+            minutes = parts[1] || 0;
+          } else if (cleanTime.length === 4) {
+            hours = parseInt(cleanTime.slice(0, 2), 10);
+            minutes = parseInt(cleanTime.slice(2, 4), 10);
+          } else if (cleanTime.length <= 2) {
+            hours = parseInt(cleanTime, 10);
+            minutes = 0;
+          }
+        }
+
+        targetDate.setHours(hours, minutes, 0, 0);
+        const killTimestamp = Math.floor(targetDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
         
