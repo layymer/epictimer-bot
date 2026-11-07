@@ -36,6 +36,7 @@ export default {
     if (interaction.type === 2) {
       const { name, options } = interaction.data;
 
+      // ОБРОБКА КОМАНДИ /kill
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
@@ -51,17 +52,14 @@ export default {
           });
         }
 
-        // Жорстка перевірка: якщо вибрано дату, час стає обов'язковим
         if (dateStrOpt && !timeStrOpt) {
           return jsonResponse({
             content: `❌ Якщо ви вказуєте дату, **обов'язково** потрібно вказати й точний час вбивства!`
           });
         }
 
-        const now = Math.floor(Date.now() / 1000);
         const targetDate = new Date();
 
-        // 1. Обробка дати з випадаючого меню (формат YYYY-MM-DD)
         if (dateStrOpt) {
           const parsed = new Date(dateStrOpt);
           if (!isNaN(parsed.getTime())) {
@@ -69,7 +67,6 @@ export default {
           }
         }
 
-        // 2. Обробка часу (з точністю до хвилини)
         let hours = targetDate.getHours();
         let minutes = targetDate.getMinutes();
 
@@ -92,8 +89,6 @@ export default {
         const killTimestamp = Math.floor(targetDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
-        
-        // Чистий розрахунок 4-годинного вікна без додаткового буфера
         const minRespawn = killTimestamp + (bossInfo.base * 3600);
         const maxRespawn = minRespawn + (bossInfo.window * 3600);
 
@@ -107,7 +102,10 @@ export default {
         });
       }
 
+      // ОБРОБКА КОМАНДИ /status
       if (name === 'status') {
+        const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
+
         const { results } = await env.DB.prepare(
           `SELECT name, min_respawn, max_respawn FROM bosses ORDER BY min_respawn ASC`
         ).all();
@@ -118,12 +116,63 @@ export default {
           });
         }
 
-        let msg = `**📋 Поточний розклад респавну епік-босів:**\n`;
-        for (const row of results) {
-          msg += `• **${row.name}**: з <t:${row.min_respawn}:F> по <t:${row.max_respawn}:T> (<t:${row.min_respawn}:R>)\n`;
+        const now = Math.floor(Date.now() / 1000);
+        let fields = [];
+        let titleSuffix = "поточний розклад";
+
+        // Якщо користувач обрав конкретну дату для фільтрації
+        let filteredResults = results;
+        if (filterDateOpt) {
+          const startOfDay = new Date(filterDateOpt);
+          startOfDay.setHours(0, 0, 0, 0);
+          const startSec = Math.floor(startOfDay.getTime() / 1000);
+
+          const endOfDay = new Date(filterDateOpt);
+          endOfDay.setHours(23, 59, 59, 999);
+          const endSec = Math.floor(endOfDay.getTime() / 1000);
+
+          // Залишаємо босів, чиє вікно респавну зачіпає цей день
+          filteredResults = results.filter(row => 
+            (row.min_respawn <= endSec && row.max_respawn >= startSec)
+          );
+
+          titleSuffix = `на дату ${filterDateOpt.split('-').reverse().join('.')}`;
         }
 
-        return jsonResponse({ content: msg });
+        if (filteredResults.length === 0) {
+          return jsonResponse({
+            content: `📭 Немає респавнів епік-босів на обрану дату (${filterDateOpt}).`
+          });
+        }
+
+        for (const row of filteredResults) {
+          let statusText = "";
+          if (now >= row.min_respawn && now <= row.max_respawn) {
+            statusText = "🟢 **ВІКНО ВІДКРИТЕ ЗАРАЗ!**";
+          } else if (now > row.max_respawn) {
+            statusText = "🔴 **Вікно минуло**";
+          } else {
+            statusText = `⏳ Очікування (<t:${row.min_respawn}:R>)`;
+          }
+
+          fields.push({
+            name: `⚔️ ${row.name}`,
+            value: `▫️ **З:** <t:${row.min_respawn}:F>\n▫️ **По:** <t:${row.max_respawn}:T>\n▫️ **Статус:** ${statusText}`,
+            inline: false
+          });
+        }
+
+        return jsonResponse({
+          embeds: [
+            {
+              title: `📋 Респавн епік-босів (${titleSuffix})`,
+              color: 0x5865F2,
+              fields: fields,
+              footer: { text: "Lineage 2 Epic Timer" },
+              timestamp: new Date().toISOString()
+            }
+          ]
+        });
       }
     }
 
