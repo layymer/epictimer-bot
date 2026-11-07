@@ -102,7 +102,7 @@ export default {
         });
       }
 
-      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ ШКАЛИ-ДІАГРАМИ)
+      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ КРУГОВОГО ЦИФЕРБЛАТУ)
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -133,71 +133,69 @@ export default {
           });
         }
 
-        const labels = [];
-        const dataIntervals = [];
-        const backgroundColors = [];
+        const datasets = [];
         const now = Math.floor(Date.now() / 1000);
 
-        for (const row of activeBosses) {
-          labels.push(row.name);
+        // 24 години доби (00:00 - 23:00)
+        const hoursLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
 
-          const dayStartOffset = Math.max(0, (row.min_respawn - startSec) / 3600);
-          const dayEndOffset = Math.min(24, (row.max_respawn - startSec) / 3600);
-          
-          dataIntervals.push([Number(dayStartOffset.toFixed(2)), Number(dayEndOffset.toFixed(2))]);
+        activeBosses.forEach((row) => {
+          const hourData = Array(24).fill(0);
+          const bgColors = Array(24).fill('rgba(235, 238, 242, 0.4)'); // Неактивні години (сірі)
 
-          if (now >= row.min_respawn && now <= row.max_respawn) {
-            backgroundColors.push('rgba(46, 204, 113, 0.85)'); // Зелений (зараз)
-          } else if (now > row.max_respawn) {
-            backgroundColors.push('rgba(231, 76, 60, 0.85)');  // Червоний (минуло)
-          } else {
-            backgroundColors.push('rgba(88, 101, 242, 0.85)');  // Фіолетовий (очікування)
+          for (let h = 0; h < 24; h++) {
+            const hStart = startSec + (h * 3600);
+            const hEnd = hStart + 3600;
+
+            if (row.min_respawn < hEnd && row.max_respawn > hStart) {
+              hourData[h] = 1; // Займає сектор години
+              if (now >= row.min_respawn && now <= row.max_respawn) {
+                bgColors[h] = '#2ecc71'; // Зелений (зараз)
+              } else if (now > row.max_respawn) {
+                bgColors[h] = '#e74c3c'; // Червоний (минуло)
+              } else {
+                bgColors[h] = '#5865F2'; // Синій/Фіолетовий (очікування)
+              }
+            }
           }
-        }
+
+          datasets.push({
+            label: row.name,
+            data: hourData,
+            backgroundColor: bgColors,
+            borderWidth: 1,
+            borderColor: '#ffffff'
+          });
+        });
 
         const chartConfig = {
-          type: 'bar',
+          type: 'doughnut',
           data: {
-            labels: labels,
-            datasets: [{
-              label: 'Вікно респавну (год)',
-              data: dataIntervals,
-              backgroundColor: backgroundColors,
-              borderColor: '#ffffff',
-              borderWidth: 1,
-              borderRadius: 4
-            }]
+            labels: hoursLabels,
+            datasets: datasets
           },
           options: {
-            indexAxis: 'y',
-            scales: {
-              x: {
-                min: 0,
-                max: 24,
-                title: { display: true, text: 'Години доби (00:00 — 24:00)', font: { size: 12, weight: 'bold' } },
-                ticks: { stepSize: 2 }
-              },
-              y: {
-                ticks: { font: { size: 14, weight: 'bold' } }
-              }
-            },
+            responsive: true,
             plugins: {
-              legend: { display: false },
-              title: { 
-                display: true, 
-                text: `Графік респавнів: ${dateStrFormatted}`, 
-                font: { size: 16, weight: 'bold' } 
+              legend: {
+                position: 'bottom',
+                labels: { font: { size: 12, weight: 'bold' } }
+              },
+              title: {
+                display: true,
+                text: `Круговий графік респавнів: ${dateStrFormatted}`,
+                font: { size: 16, weight: 'bold' }
               }
             }
           }
         };
 
-        const chartUrl = `https://quickchart.io/chart?w=600&h=300&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+        const chartUrl = `https://quickchart.io/chart?w=500&h=500&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
 
         return jsonResponse({
           embeds: [
             {
-              title: `📊 Діаграма респавнів епік-босів`,
+              title: `⭕ Круговий графік респавнів епік-босів`,
               description: `Дата: **${dateStrFormatted}**\n🟢 Відкрито зараз | 🔵 Очікування | 🔴 Минуло`,
               color: 0x5865F2,
               image: { url: chartUrl },
