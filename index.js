@@ -1,4 +1,4 @@
-import { verifyKey } from 'https://esm.sh/discord-interactions';
+import { verifyKey } from 'discord-interactions';
 
 const BOSS_DATA = {
   "Queen Ant": { base: 17, window: 4 },
