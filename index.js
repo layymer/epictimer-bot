@@ -53,7 +53,7 @@ export default {
     if (interaction.type === 2) {
       const { name, options } = interaction.data;
 
-      // КОМАНДА /kill
+      // КОМАНДА /kill (з урахуванням київського часу UTC+2)
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
@@ -75,17 +75,25 @@ export default {
           });
         }
 
-        const targetDate = new Date();
+        // Враховуємо український часовий пояс (UTC+2)
+        const UKRAINE_OFFSET_HOURS = 2;
+
+        let targetYear, targetMonth, targetDay;
 
         if (dateStrOpt) {
-          const parsed = new Date(dateStrOpt);
-          if (!isNaN(parsed.getTime())) {
-            targetDate.setFullYear(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-          }
+          const parts = dateStrOpt.split('-').map(Number);
+          targetYear = parts[0];
+          targetMonth = parts[1] - 1;
+          targetDay = parts[2];
+        } else {
+          const nowUa = new Date(Date.now() + (UKRAINE_OFFSET_HOURS * 3600 * 1000));
+          targetYear = nowUa.getUTCFullYear();
+          targetMonth = nowUa.getUTCMonth();
+          targetDay = nowUa.getUTCDate();
         }
 
-        let hours = targetDate.getHours();
-        let minutes = targetDate.getMinutes();
+        let hours = 0;
+        let minutes = 0;
 
         if (timeStrOpt) {
           const cleanTime = timeStrOpt.trim().replace('.', ':');
@@ -100,10 +108,14 @@ export default {
             hours = parseInt(cleanTime, 10);
             minutes = 0;
           }
+        } else {
+          const nowUa = new Date(Date.now() + (UKRAINE_OFFSET_HOURS * 3600 * 1000));
+          hours = nowUa.getUTCHours();
+          minutes = nowUa.getUTCMinutes();
         }
 
-        targetDate.setHours(hours, minutes, 0, 0);
-        const killTimestamp = Math.floor(targetDate.getTime() / 1000);
+        const utcDate = new Date(Date.UTC(targetYear, targetMonth, targetDay, hours - UKRAINE_OFFSET_HOURS, minutes, 0));
+        const killTimestamp = Math.floor(utcDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
         const minRespawn = killTimestamp + (bossInfo.base * 3600);
@@ -114,7 +126,6 @@ export default {
            ON CONFLICT(name) DO UPDATE SET min_respawn = ?2, max_respawn = ?3`
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
-        // Дублюємо інформацію про вбивство у чат згідно з вашими вимогами
         return jsonResponse({
           content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
