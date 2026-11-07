@@ -1,15 +1,12 @@
 {
   "name": "epictimer-bot",
   "version": "1.0.0",
+  "private": true,
   "main": "index.js",
   "dependencies": {
-    "discord-interactions": "^4.2.0"
+    "discord-interactions": "^4.4.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy"
   }
-}
-
-
-
-
-"scripts": {
-  "register": "node register.js"
 }
