@@ -102,7 +102,7 @@ export default {
         });
       }
 
-      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ КРУГОВОЇ ДІАГРАМИ)
+      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ ШКАЛИ-ДІАГРАМИ)
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -125,7 +125,7 @@ export default {
           (row.min_respawn <= endSec && row.max_respawn >= startSec)
         );
 
-        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'numeric', year: 'numeric' });
+        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
 
         if (activeBosses.length === 0) {
           return jsonResponse({
@@ -133,75 +133,71 @@ export default {
           });
         }
 
-        // Будуємо 24-годинні радіальні датасети для QuickChart (Radial Bar Chart)
-        const datasets = [];
+        const labels = [];
+        const dataIntervals = [];
+        const backgroundColors = [];
         const now = Math.floor(Date.now() / 1000);
 
-        activeBosses.forEach((row, idx) => {
-          // Масив 24 годин доби (0..23)
-          const hourValues = [];
-          const bgColors = [];
+        for (const row of activeBosses) {
+          labels.push(row.name);
 
-          for (let h = 0; h < 24; h++) {
-            const hStart = startSec + (h * 3600);
-            const hEnd = hStart + 3600;
+          const dayStartOffset = Math.max(0, (row.min_respawn - startSec) / 3600);
+          const dayEndOffset = Math.min(24, (row.max_respawn - startSec) / 3600);
+          
+          dataIntervals.push([Number(dayStartOffset.toFixed(2)), Number(dayEndOffset.toFixed(2))]);
 
-            // Перевіряємо, чи година перетинається з вікном боса
-            if (row.min_respawn < hEnd && row.max_respawn > hStart) {
-              hourValues.push(1);
-              if (now >= row.min_respawn && now <= row.max_respawn) {
-                bgColors.push('#2ecc71'); // Зелений (відкрито зараз)
-              } else if (now > row.max_respawn) {
-                bgColors.push('#e74c3c'); // Червоний (минуло)
-              } else {
-                bgColors.push('#5865F2'); // Синій/фіолетовий (очікування)
-              }
-            } else {
-              hourValues.push(0);
-              bgColors.push('rgba(235, 238, 242, 0.4)'); // Світлий фон неактивних годин
-            }
+          if (now >= row.min_respawn && now <= row.max_respawn) {
+            backgroundColors.push('rgba(46, 204, 113, 0.85)'); // Зелений (зараз)
+          } else if (now > row.max_respawn) {
+            backgroundColors.push('rgba(231, 76, 60, 0.85)');  // Червоний (минуло)
+          } else {
+            backgroundColors.push('rgba(88, 101, 242, 0.85)');  // Фіолетовий (очікування)
           }
-
-          datasets.push({
-            label: row.name,
-            data: hourValues,
-            backgroundColor: bgColors,
-            borderWidth: 1,
-            borderColor: '#ffffff'
-          });
-        });
-
-        // 24 підписи годин для кругового циферблату
-        const hoursLabels = Array.from({ length: 24 }, (_, i) => `${i}`);
+        }
 
         const chartConfig = {
-          type: 'radialBar',
+          type: 'bar',
           data: {
-            labels: hoursLabels,
-            datasets: datasets
+            labels: labels,
+            datasets: [{
+              label: 'Вікно респавну (год)',
+              data: dataIntervals,
+              backgroundColor: backgroundColors,
+              borderColor: '#ffffff',
+              borderWidth: 1,
+              borderRadius: 4
+            }]
           },
           options: {
-            plugins: {
-              title: {
-                display: true,
-                text: `Графік респавнів (24г): ${dateStrFormatted}`,
-                font: { size: 18, weight: 'bold' },
-                color: '#111827'
+            indexAxis: 'y',
+            scales: {
+              x: {
+                min: 0,
+                max: 24,
+                title: { display: true, text: 'Години доби (00:00 — 24:00)', font: { size: 12, weight: 'bold' } },
+                ticks: { stepSize: 2 }
               },
-              legend: {
-                display: true,
-                position: 'bottom'
+              y: {
+                ticks: { font: { size: 14, weight: 'bold' } }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              title: { 
+                display: true, 
+                text: `Графік респавнів: ${dateStrFormatted}`, 
+                font: { size: 16, weight: 'bold' } 
               }
             }
           }
         };
 
-        const chartUrl = `https://quickchart.io/chart?w=500&h=500&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+        const chartUrl = `https://quickchart.io/chart?w=600&h=300&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
 
         return jsonResponse({
           embeds: [
             {
-              title: `⭕ Кругова діаграма респавнів епік-босів`,
+              title: `📊 Діаграма респавнів епік-босів`,
               description: `Дата: **${dateStrFormatted}**\n🟢 Відкрито зараз | 🔵 Очікування | 🔴 Минуло`,
               color: 0x5865F2,
               image: { url: chartUrl },
