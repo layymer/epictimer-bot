@@ -14,7 +14,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. ВЕБ-ДАШБОРД (HTTP GET)
+    // 1. ВЕБ-ДАШБОРД (HTTP GET) — віддає HTML з даними з D1
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
         `SELECT name, min_respawn, max_respawn FROM bosses`
@@ -53,6 +53,7 @@ export default {
     if (interaction.type === 2) {
       const { name, options } = interaction.data;
 
+      // КОМАНДА /kill
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
@@ -113,11 +114,13 @@ export default {
            ON CONFLICT(name) DO UPDATE SET min_respawn = ?2, max_respawn = ?3`
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
+        // Дублюємо інформацію про вбивство у чат згідно з вашими вимогами
         return jsonResponse({
-          content: `⚔️ Зафіксовано вбивство **${matchedBoss}**!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
+          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
       }
 
+      // КОМАНДА /status
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
