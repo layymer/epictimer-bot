@@ -102,7 +102,7 @@ export default {
         });
       }
 
-      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ КРУГОВОГО ЦИФЕРБЛАТУ)
+      // ОБРОБКА КОМАНДИ /status (МИТТЄВИЙ ТЕКСТОВИЙ EMBED-РОЗКЛАД)
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -116,89 +116,56 @@ export default {
           });
         }
 
-        const targetDay = filterDateOpt ? new Date(filterDateOpt) : new Date();
-        targetDay.setHours(0, 0, 0, 0);
-        const startSec = Math.floor(targetDay.getTime() / 1000);
-        const endSec = startSec + 86400;
+        const now = Math.floor(Date.now() / 1000);
+        let fields = [];
+        let titleSuffix = "поточний розклад";
 
-        const activeBosses = results.filter(row => 
-          (row.min_respawn <= endSec && row.max_respawn >= startSec)
-        );
+        let filteredResults = results;
+        if (filterDateOpt) {
+          const startOfDay = new Date(filterDateOpt);
+          startOfDay.setHours(0, 0, 0, 0);
+          const startSec = Math.floor(startOfDay.getTime() / 1000);
 
-        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+          const endOfDay = new Date(filterDateOpt);
+          endOfDay.setHours(23, 59, 59, 999);
+          const endSec = Math.floor(endOfDay.getTime() / 1000);
 
-        if (activeBosses.length === 0) {
+          filteredResults = results.filter(row => 
+            (row.min_respawn <= endSec && row.max_respawn >= startSec)
+          );
+
+          titleSuffix = `на дату ${filterDateOpt.split('-').reverse().join('.')}`;
+        }
+
+        if (filteredResults.length === 0) {
           return jsonResponse({
-            content: `📭 Немає респавнів епік-босів на дату **${dateStrFormatted}**.`
+            content: `📭 Немає респавнів епік-босів на обрану дату (${filterDateOpt}).`
           });
         }
 
-        const datasets = [];
-        const now = Math.floor(Date.now() / 1000);
-
-        // 24 години доби (00:00 - 23:00)
-        const hoursLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
-
-        activeBosses.forEach((row) => {
-          const hourData = Array(24).fill(0);
-          const bgColors = Array(24).fill('rgba(235, 238, 242, 0.4)'); // Неактивні години (сірі)
-
-          for (let h = 0; h < 24; h++) {
-            const hStart = startSec + (h * 3600);
-            const hEnd = hStart + 3600;
-
-            if (row.min_respawn < hEnd && row.max_respawn > hStart) {
-              hourData[h] = 1; // Займає сектор години
-              if (now >= row.min_respawn && now <= row.max_respawn) {
-                bgColors[h] = '#2ecc71'; // Зелений (зараз)
-              } else if (now > row.max_respawn) {
-                bgColors[h] = '#e74c3c'; // Червоний (минуло)
-              } else {
-                bgColors[h] = '#5865F2'; // Синій/Фіолетовий (очікування)
-              }
-            }
+        for (const row of filteredResults) {
+          let statusText = "";
+          if (now >= row.min_respawn && now <= row.max_respawn) {
+            statusText = "🟢 **ВІКНО ВІДКРИТЕ ЗАРАЗ!**";
+          } else if (now > row.max_respawn) {
+            statusText = "🔴 **Вікно минуло**";
+          } else {
+            statusText = `⏳ Очікування (<t:${row.min_respawn}:R>)`;
           }
 
-          datasets.push({
-            label: row.name,
-            data: hourData,
-            backgroundColor: bgColors,
-            borderWidth: 1,
-            borderColor: '#ffffff'
+          fields.push({
+            name: `⚔️ ${row.name}`,
+            value: `▫️ **З:** <t:${row.min_respawn}:F>\n▫️ **По:** <t:${row.max_respawn}:T>\n▫️ **Статус:** ${statusText}`,
+            inline: false
           });
-        });
-
-        const chartConfig = {
-          type: 'doughnut',
-          data: {
-            labels: hoursLabels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                position: 'bottom',
-                labels: { font: { size: 12, weight: 'bold' } }
-              },
-              title: {
-                display: true,
-                text: `Круговий графік респавнів: ${dateStrFormatted}`,
-                font: { size: 16, weight: 'bold' }
-              }
-            }
-          }
-        };
-
-        const chartUrl = `https://quickchart.io/chart?w=500&h=500&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+        }
 
         return jsonResponse({
           embeds: [
             {
-              title: `⭕ Круговий графік респавнів епік-босів`,
-              description: `Дата: **${dateStrFormatted}**\n🟢 Відкрито зараз | 🔵 Очікування | 🔴 Минуло`,
+              title: `📋 Респавн епік-босів (${titleSuffix})`,
               color: 0x5865F2,
-              image: { url: chartUrl },
+              fields: fields,
               footer: { text: "Lineage 2 Epic Timer" },
               timestamp: new Date().toISOString()
             }
