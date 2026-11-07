@@ -1,0 +1,8 @@
+name = "epictimer-bot"
+main = "index.js"
+compatibility_date = "2026-11-07"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "epictimer-db"
+database_id = "YOUR_D1_DATABASE_ID_HERE" # вкажіть свій ID
