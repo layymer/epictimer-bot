@@ -1,13 +1,13 @@
 import { verifyKey } from 'https://esm.sh/discord-interactions';
 
-const BOSS_COOLDOWNS = {
-  "Queen Ant": 24,
-  "Core": 36,
-  "Orfen": 36,
-  "Zaken": 48,
-  "Baium": 120,
-  "Antharas": 192,
-  "Valakas": 192
+const BOSS_DATA = {
+  "Queen Ant": { base: 17, window: 4 },
+  "Core": { base: 48, window: 4 },
+  "Orfen": { base: 33, window: 4 },
+  "Baium": { base: 125, window: 4 },
+  "Antharas": { base: 342, window: 4 },
+  "Valakas": { base: 342, window: 4 },
+  "Beleth": { base: 342, window: 4 }
 };
 
 export default {
@@ -40,13 +40,13 @@ export default {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
 
-        const matchedBoss = Object.keys(BOSS_COOLDOWNS).find(
-          b => b.toLowerCase() === bossNameOpt.toLowerCase()
+        const matchedBoss = Object.keys(BOSS_DATA).find(
+          b => b.toLowerCase() === bossNameOpt?.toLowerCase()
         );
 
         if (!matchedBoss) {
           return jsonResponse({
-            content: `❌ Боса **${bossNameOpt}** немає у базовому списку респавну!`
+            content: `❌ Боса **${bossNameOpt}** немає у списку епічних босів!`
           });
         }
 
@@ -55,43 +55,49 @@ export default {
 
         if (timeStrOpt) {
           const [hours, minutes] = timeStrOpt.split(':').map(Number);
-          if (!isNaN(hours) && !isNaN(minutes)) {
+          if (!isNaN(hours)) {
             const d = new Date();
-            d.setHours(hours, minutes, 0, 0);
+            // Якщо хвилини не вказали (наприклад, передали просто годинник або 00 хвилин), 
+            // беремо початок години для максимального запасу безпеки
+            d.setHours(hours, isNaN(minutes) ? 0 : minutes, 0, 0);
             killTimestamp = Math.floor(d.getTime() / 1000);
             if (killTimestamp > now) {
-              killTimestamp -= 86400;
+              killTimestamp -= 86400; // якщо час у майбутньому — це було вчора
             }
           }
         }
 
-        const cooldownHours = BOSS_COOLDOWNS[matchedBoss];
-        const respawnTimestamp = killTimestamp + (cooldownHours * 3600);
+        const bossInfo = BOSS_DATA[matchedBoss];
+        
+        // Закладаємо додаткову годину запасу (зсуваємо мінімальний респ на 1 годину раніше)
+        const safetyBuffer = 3600; 
+        const minRespawn = killTimestamp + (bossInfo.base * 3600) - safetyBuffer;
+        const maxRespawn = minRespawn + ((bossInfo.window + 1) * 3600); // розширюємо вікно на цей же час
 
         await env.DB.prepare(
-          `INSERT INTO bosses (name, respawn_time) VALUES (?1, ?2) 
-           ON CONFLICT(name) DO UPDATE SET respawn_time = ?2`
-        ).bind(matchedBoss, respawnTimestamp).run();
+          `INSERT INTO bosses (name, min_respawn, max_respawn) VALUES (?1, ?2, ?3) 
+           ON CONFLICT(name) DO UPDATE SET min_respawn = ?2, max_respawn = ?3`
+        ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
         return jsonResponse({
-          content: `⚔️ Зафіксовано вбивство **${matched_boss}**!\n⏳ Наступний респ: <t:${respawnTimestamp}:F> (<t:${respawnTimestamp}:R>)`
+          content: `⚔️ Зафіксовано вбивство **${matchedBoss}** (з урахуванням запасу часу)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
       }
 
       if (name === 'status') {
         const { results } = await env.DB.prepare(
-          `SELECT name, respawn_time FROM bosses ORDER BY respawn_time ASC`
+          `SELECT name, min_respawn, max_respawn FROM bosses ORDER BY min_respawn ASC`
         ).all();
 
         if (!results || results.length === 0) {
           return jsonResponse({
-            content: `📋 Немає зафіксованих даних про респ босів.`
+            content: `📋 Немає зафіксованих даних про респ епік-босів.`
           });
         }
 
-        let msg = `**📋 Поточний розклад респавну босів:**\n`;
+        let msg = `**📋 Поточний розклад респавну епіків (з урахуванням захисного інтервалу):**\n`;
         for (const row of results) {
-          msg += `• **${row.name}**: <t:${row.respawn_time}:F> (<t:${row.respawn_time}:R>)\n`;
+          msg += `• **${row.name}**: з <t:${row.min_respawn}:F> по <t:${row.max_respawn}:T> (<t:${row.min_respawn}:R>)\n`;
         }
 
         return jsonResponse({ content: msg });
