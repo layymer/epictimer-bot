@@ -14,7 +14,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. ВЕБ-ДАШБОРД (HTTP GET) — віддає HTML-сторінку з даними з D1
+    // 1. ВЕБ-ДАШБОРД (HTTP GET)
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
         `SELECT name, min_respawn, max_respawn FROM bosses`
@@ -200,7 +200,6 @@ function jsonResponse(data) {
   );
 }
 
-// Генератор HTML з інтегрованими даними з D1
 function getDashboardHtml(dbDataJson) {
   return `<!DOCTYPE html>
 <html lang="uk">
@@ -318,7 +317,6 @@ function getDashboardHtml(dbDataJson) {
             "Beleth":    "#ef4444"
         };
 
-        // ДИНАМІЧНІ ДАНІ З D1 БАЗИ ДАНИХ
         const REAL_DB_DATA = ${dbDataJson};
 
         let baseDate = new Date();
@@ -497,4 +495,27 @@ function getDashboardHtml(dbDataJson) {
         function openModal(index) {
             activeModalIndex = index;
             let targetDate = new Date(baseDate);
-            targetDate
+            targetDate.setDate(baseDate.getDate() + index);
+            
+            let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'long' });
+            let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            
+            document.getElementById('modalTitle').innerText = \`\${dayName.toUpperCase()} — \${dateStr}\`;
+            document.getElementById('modal').classList.add('active');
+            renderSpiral('modal-spiral', targetDate, true);
+        }
+
+        function closeModal() {
+            activeModalIndex = null;
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        updateView();
+    </script>
+</body>
+</html>`;
+}
