@@ -6,3 +6,10 @@
     "discord-interactions": "^4.2.0"
   }
 }
+
+
+
+
+"scripts": {
+  "register": "node register.js"
+}
