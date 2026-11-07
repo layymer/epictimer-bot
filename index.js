@@ -57,8 +57,6 @@ export default {
           const [hours, minutes] = timeStrOpt.split(':').map(Number);
           if (!isNaN(hours)) {
             const d = new Date();
-            // Якщо хвилини не вказали (наприклад, передали просто годинник або 00 хвилин), 
-            // беремо початок години для максимального запасу безпеки
             d.setHours(hours, isNaN(minutes) ? 0 : minutes, 0, 0);
             killTimestamp = Math.floor(d.getTime() / 1000);
             if (killTimestamp > now) {
@@ -69,10 +67,9 @@ export default {
 
         const bossInfo = BOSS_DATA[matchedBoss];
         
-        // Закладаємо додаткову годину запасу (зсуваємо мінімальний респ на 1 годину раніше)
-        const safetyBuffer = 3600; 
-        const minRespawn = killTimestamp + (bossInfo.base * 3600) - safetyBuffer;
-        const maxRespawn = minRespawn + ((bossInfo.window + 1) * 3600); // розширюємо вікно на цей же час
+        // Чистий розрахунок 4-годинного вікна без додаткового буфера
+        const minRespawn = killTimestamp + (bossInfo.base * 3600);
+        const maxRespawn = minRespawn + (bossInfo.window * 3600);
 
         await env.DB.prepare(
           `INSERT INTO bosses (name, min_respawn, max_respawn) VALUES (?1, ?2, ?3) 
@@ -80,7 +77,7 @@ export default {
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
         return jsonResponse({
-          content: `⚔️ Зафіксовано вбивство **${matchedBoss}** (з урахуванням запасу часу)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
+          content: `⚔️ Зафіксовано вбивство **${matchedBoss}**!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
       }
 
@@ -95,7 +92,7 @@ export default {
           });
         }
 
-        let msg = `**📋 Поточний розклад респавну епіків (з урахуванням захисного інтервалу):**\n`;
+        let msg = `**📋 Поточний розклад респавну епік-босів:**\n`;
         for (const row of results) {
           msg += `• **${row.name}**: з <t:${row.min_respawn}:F> по <t:${row.max_respawn}:T> (<t:${row.min_respawn}:R>)\n`;
         }
