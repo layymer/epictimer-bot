@@ -102,7 +102,7 @@ export default {
         });
       }
 
-      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ ДІАГРАМИ)
+      // ОБРОБКА КОМАНДИ /status (ГЕНЕРАЦІЯ КРУГОВОЇ ДІАГРАМИ)
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -116,92 +116,92 @@ export default {
           });
         }
 
-        // Визначаємо день для перегляду (якщо не вказано — сьогодні)
         const targetDay = filterDateOpt ? new Date(filterDateOpt) : new Date();
         targetDay.setHours(0, 0, 0, 0);
         const startSec = Math.floor(targetDay.getTime() / 1000);
-        const endSec = startSec + 86400; // кінець доби
+        const endSec = startSec + 86400;
 
-        // Фільтруємо босів, чиє вікно зачіпає цей день
         const activeBosses = results.filter(row => 
           (row.min_respawn <= endSec && row.max_respawn >= startSec)
         );
 
+        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
         if (activeBosses.length === 0) {
-          const dateFormatted = targetDay.toLocaleDateString('uk-UA');
           return jsonResponse({
-            content: `📭 Немає респавнів епік-босів на дату **${dateFormatted}**.`
+            content: `📭 Немає респавнів епік-босів на дату **${dateStrFormatted}**.`
           });
         }
 
-        // Формуємо дані для діаграми Chart.js
-        const labels = [];
-        const dataIntervals = [];
-        const backgroundColors = [];
-
+        // Будуємо 24-годинні радіальні датасети для QuickChart (Radial Bar Chart)
+        const datasets = [];
         const now = Math.floor(Date.now() / 1000);
 
-        for (const row of activeBosses) {
-          labels.push(row.name);
+        activeBosses.forEach((row, idx) => {
+          // Масив 24 годин доби (0..23)
+          const hourValues = [];
+          const bgColors = [];
 
-          // Рахуємо години вікна всередині цієї доби (від 0 до 24)
-          const dayStartOffset = Math.max(0, (row.min_respawn - startSec) / 3600);
-          const dayEndOffset = Math.min(24, (row.max_respawn - startSec) / 3600);
-          
-          dataIntervals.push([Number(dayStartOffset.toFixed(2)), Number(dayEndOffset.toFixed(2))]);
+          for (let h = 0; h < 24; h++) {
+            const hStart = startSec + (h * 3600);
+            const hEnd = hStart + 3600;
 
-          // Колір залежить від статусу
-          if (now >= row.min_respawn && now <= row.max_respawn) {
-            backgroundColors.push('rgba(46, 204, 113, 0.8)'); // Зелений (відкрито зараз)
-          } else if (now > row.max_respawn) {
-            backgroundColors.push('rgba(231, 76, 60, 0.8)');  // Червоний (минуло)
-          } else {
-            backgroundColors.push('rgba(88, 101, 242, 0.8)');  // Фірмовий фіолетовий Discord (очікування)
+            // Перевіряємо, чи година перетинається з вікном боса
+            if (row.min_respawn < hEnd && row.max_respawn > hStart) {
+              hourValues.push(1);
+              if (now >= row.min_respawn && now <= row.max_respawn) {
+                bgColors.push('#2ecc71'); // Зелений (відкрито зараз)
+              } else if (now > row.max_respawn) {
+                bgColors.push('#e74c3c'); // Червоний (минуло)
+              } else {
+                bgColors.push('#5865F2'); // Синій/фіолетовий (очікування)
+              }
+            } else {
+              hourValues.push(0);
+              bgColors.push('rgba(235, 238, 242, 0.4)'); // Світлий фон неактивних годин
+            }
           }
-        }
 
-        const dateStrFormatted = targetDay.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+          datasets.push({
+            label: row.name,
+            data: hourValues,
+            backgroundColor: bgColors,
+            borderWidth: 1,
+            borderColor: '#ffffff'
+          });
+        });
 
-        // Конфігурація діаграми для QuickChart
+        // 24 підписи годин для кругового циферблату
+        const hoursLabels = Array.from({ length: 24 }, (_, i) => `${i}`);
+
         const chartConfig = {
-          type: 'bar',
+          type: 'radialBar',
           data: {
-            labels: labels,
-            datasets: [{
-              label: 'Вікно респавну (години)',
-              data: dataIntervals,
-              backgroundColor: backgroundColors,
-              borderWidth: 1
-            }]
+            labels: hoursLabels,
+            datasets: datasets
           },
           options: {
-            indexAxis: 'y', // Робить стовпчики горизонтальними
-            scales: {
-              x: {
-                min: 0,
-                max: 24,
-                title: { display: true, text: 'Години доби (00:00 - 24:00)', color: '#333', font: { weight: 'bold' } },
-                ticks: { stepSize: 2 }
-              }
-            },
             plugins: {
-              legend: { display: false },
-              title: { 
-                display: true, 
-                text: `Графік респавнів: ${dateStrFormatted}`, 
-                font: { size: 16, weight: 'bold' } 
+              title: {
+                display: true,
+                text: `Графік респавнів (24г): ${dateStrFormatted}`,
+                font: { size: 18, weight: 'bold' },
+                color: '#111827'
+              },
+              legend: {
+                display: true,
+                position: 'bottom'
               }
             }
           }
         };
 
-        // Генеруємо посилання на картинку через QuickChart.io
-        const chartUrl = `https://quickchart.io/chart?w=700&h=350&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
+        const chartUrl = `https://quickchart.io/chart?w=500&h=500&bkg=white&c=${encodeURIComponent(JSON.stringify(chartConfig))}`;
 
         return jsonResponse({
           embeds: [
             {
-              title: `📊 Діаграма респавну епік-босів`,
+              title: `⭕ Кругова діаграма респавнів епік-босів`,
               description: `Дата: **${dateStrFormatted}**\n🟢 Відкрито зараз | 🔵 Очікування | 🔴 Минуло`,
               color: 0x5865F2,
               image: { url: chartUrl },
