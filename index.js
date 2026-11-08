@@ -51,13 +51,12 @@ export default {
       });
     }
 
-    // AUTOCOMPLETE (Type 4) — динамічне формування списку дат (сьогодні та 14 днів назад)
+    // AUTOCOMPLETE (Type 4) — динамічне формування списку дат (сьогодні та 14 днів у минуле)
     if (interaction.type === 4) {
       const choices = [];
       const UKRAINE_OFFSET_HOURS = 2;
 
       for (let i = 0; i < 15; i++) {
-        // Беремо почний час з урахуванням українського часового поясу
         const d = new Date(Date.now() + (UKRAINE_OFFSET_HOURS * 3600 * 1000));
         d.setUTCDate(d.getUTCDate() - i);
 
@@ -67,7 +66,6 @@ export default {
 
         const val = `${year}-${month}-${day}`;
 
-        // Форматуємо зрозумілу назву для підказки (наприклад: "09.11.2026 (Пн)")
         const dayNames = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
         const dayOfWeek = dayNames[d.getUTCDay()];
         const name = `${day}.${month}.${year} (${dayOfWeek})`;
@@ -201,7 +199,18 @@ export default {
 
         if (filteredResults.length === 0) {
           return jsonResponse({
-            content: `📭 Немає респавнів епік-босів на обрану дату (${filterDateOpt}).` }); }  for (const row of filteredResults) { let statusText = ""; if (now >= row.min_respawn && now <= row.max_respawn) { statusText = "🟢 **ВІКНО ВІДКРИТЕ ЗАРАЗ!**"; } else if (now > row.max_respawn) { statusText = "🔴 **Вікно минуло**"; } else { statusText = `⏳ Очікування (<t:${row.min_respawn}:R>)`;
+            content: `📭 Немає респавнів епік-босів на обрану дату (${filterDateOpt}).`
+          });
+        }
+
+        for (const row of filteredResults) {
+          let statusText = "";
+          if (now >= row.min_respawn && now <= row.max_respawn) {
+            statusText = "🟢 **ВІКНО ВІДКРИТЕ ЗАРАЗ!**";
+          } else if (now > row.max_respawn) {
+            statusText = "🔴 **Вікно минуло**";
+          } else {
+            statusText = `⏳ Очікування (<t:${row.min_respawn}:R>)`;
           }
 
           fields.push({
@@ -457,4 +466,101 @@ function getDashboardHtml(dbDataJson) {
                 g.append('text')
                     .attr('x', textX)
                     .attr('y', textY)
-                    .attr('dy', '0.35em
+                    .attr('dy', '0.35em')
+                    .attr('font-size', \`\${Math.round(16 * scaleFactor)}px\`)
+                    .attr('font-weight', 'bold')
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', '#ffffff')
+                    .text(h);
+            }
+
+            bossLabelsToDraw.forEach(lbl => {
+                const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
+                const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(75 * scaleFactor);
+
+                const lx = labelRadius * Math.sin(lbl.angle);
+                const ly = labelRadius * -Math.cos(lbl.angle);
+
+                g.append('line')
+                    .attr('x1', lbl.x)
+                    .attr('y1', lbl.y)
+                    .attr('x2', lx)
+                    .attr('y2', ly)
+                    .attr('stroke', lbl.color)
+                    .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
+                    .attr('stroke-dasharray', '5,4');
+
+                g.append('text')
+                    .attr('x', lx + (lx >= 0 ? 12 : -12))
+                    .attr('y', ly)
+                    .attr('dy', '0.35em')
+                    .attr('font-size', \`\${Math.round(18 * scaleFactor)}px\`)
+                    .attr('font-weight', 'bold')
+                    .attr('text-anchor', lx >= 0 ? 'start' : 'end')
+                    .attr('fill', lbl.color)
+                    .text(lbl.name);
+            });
+        }
+
+        function updateView() {
+            for (let i = 0; i < 3; i++) {
+                let targetDate = new Date(baseDate);
+                targetDate.setDate(baseDate.getDate() + i);
+                
+                let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'short' });
+                let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' });
+                
+                document.getElementById(\`title-\${i}\`).innerText = \`\${dayName.toUpperCase()} (\${dateStr})\`;
+                renderSpiral(\`spiral-\${i}\`, targetDate, false);
+            }
+
+            let d1 = new Date(baseDate).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+            let d3 = new Date(baseDate);
+            d3.setDate(baseDate.getDate() + 2);
+            let d3Str = d3.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', year: 'numeric' });
+            document.getElementById('currentRange').innerText = \`\${d1} — \${d3Str}\`;
+
+            if (activeModalIndex !== null) {
+                let targetDate = new Date(baseDate);
+                targetDate.setDate(baseDate.getDate() + activeModalIndex);
+                renderSpiral('modal-spiral', targetDate, true);
+            }
+        }
+
+        function changeDay(days) {
+            baseDate.setDate(baseDate.getDate() + days);
+            updateView();
+        }
+
+        function resetToToday() {
+            baseDate = new Date();
+            updateView();
+        }
+
+        function openModal(index) {
+            activeModalIndex = index;
+            let targetDate = new Date(baseDate);
+            targetDate.setDate(baseDate.getDate() + index);
+            
+            let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'long' });
+            let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            
+            document.getElementById('modalTitle').innerText = \`\${dayName.toUpperCase()} — \${dateStr}\`;
+            document.getElementById('modal').classList.add('active');
+            renderSpiral('modal-spiral', targetDate, true);
+        }
+
+        function closeModal() {
+            activeModalIndex = null;
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        updateView();
+    </script>
+</body>
+</html>`;
+}
