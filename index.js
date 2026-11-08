@@ -44,14 +44,13 @@ export default {
 
     const interaction = JSON.parse(body);
 
-    // PING / PONG (Type 1)
     if (interaction.type === 1) {
       return new Response(JSON.stringify({ type: 1 }), {
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // AUTOCOMPLETE (Type 4) — динамічне формування списку дат (сьогодні та 14 днів у минуле)
+    // AUTOCOMPLETE (Type 4)
     if (interaction.type === 4) {
       const choices = [];
       const UKRAINE_OFFSET_HOURS = 2;
@@ -65,10 +64,9 @@ export default {
         const day = String(d.getUTCDate()).padStart(2, '0');
 
         const val = `${year}-${month}-${day}`;
-
-        const dayNames = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        const dayNames = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П’ятниця', 'Субота'];
         const dayOfWeek = dayNames[d.getUTCDay()];
-        const name = `${day}.${month}.${year} (${dayOfWeek})`;
+        const name = `${dayOfWeek} — ${day}.${month}.${year}`;
 
         choices.push({ name: name, value: val });
       }
@@ -81,11 +79,9 @@ export default {
       });
     }
 
-    // SLASH COMMANDS (Type 2)
     if (interaction.type === 2) {
       const { name, options } = interaction.data;
 
-      // КОМАНДА /kill
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
@@ -161,7 +157,6 @@ export default {
         });
       }
 
-      // КОМАНДА /status
       if (name === 'status') {
         const filterDateOpt = options?.find(opt => opt.name === 'date')?.value;
 
@@ -250,7 +245,7 @@ function getDashboardHtml(dbDataJson) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lineage 2 Epic Boss Spiral Timers</title>
+    <title>Lineage 2 Epic Boss Spiral Timer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.0.0/d3.min.js"></script>
     <style>
         body {
@@ -265,36 +260,41 @@ function getDashboardHtml(dbDataJson) {
             min-height: 100vh;
             box-sizing: border-box;
         }
-        header { text-align: center; margin-bottom: 25px; }
-        h1 { color: #38bdf8; font-size: 28px; margin: 0 0 15px 0; }
+        header { text-align: center; margin-bottom: 20px; }
+        h1 { color: #38bdf8; font-size: 26px; margin: 0 0 12px 0; }
         .nav-controls {
             display: flex; gap: 15px; align-items: center;
-            background: #1e293b; padding: 12px 28px; border-radius: 14px;
+            background: #1e293b; padding: 10px 25px; border-radius: 14px;
             box-shadow: 0 6px 20px rgba(0,0,0,0.4);
         }
         button {
             background: #0284c7; color: white; border: none;
-            padding: 10px 20px; border-radius: 8px; cursor: pointer;
-            font-weight: bold; font-size: 15px; transition: background 0.2s, transform 0.1s;
+            padding: 8px 18px; border-radius: 8px; cursor: pointer;
+            font-weight: bold; font-size: 14px; transition: background 0.2s, transform 0.1s;
         }
         button:hover { background: #0369a1; }
         button:active { transform: scale(0.97); }
-        #currentRange { font-weight: bold; color: #e2e8f0; font-size: 16px; }
-        .spirals-grid {
-            display: flex; gap: 30px; width: 100%; max-width: 1700px; justify-content: center;
+        #currentDateTitle { font-weight: bold; color: #38bdf8; font-size: 18px; text-transform: uppercase; }
+
+        .main-container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         .spiral-card {
             background: #1e293b; padding: 25px; border-radius: 22px;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5); text-align: center;
-            flex: 1; max-width: 550px; cursor: pointer;
+            width: 100%; max-width: 650px; cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
         }
         .spiral-card:hover {
-            transform: translateY(-5px); box-shadow: 0 20px 40px rgba(56, 189, 248, 0.2);
+            transform: translateY(-3px); box-shadow: 0 20px 40px rgba(56, 189, 248, 0.2);
         }
-        .spiral-card h3 { margin: 0 0 15px 0; font-size: 20px; color: #38bdf8; }
         .spiral-container { width: 100%; aspect-ratio: 1 / 1; margin: 0 auto; }
         svg { width: 100%; height: 100%; overflow: visible; }
+
         .modal {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(11, 19, 43, 0.98); backdrop-filter: blur(12px);
@@ -321,24 +321,15 @@ function getDashboardHtml(dbDataJson) {
         <h1>Lineage 2 Epic Boss Spiral Timers</h1>
         <div class="nav-controls">
             <button onclick="changeDay(-1)">◀ Попередній день</button>
-            <span id="currentRange">Завантаження...</span>
+            <span id="currentDateTitle">Завантаження...</span>
             <button onclick="changeDay(1)">Наступний день ▶</button>
             <button onclick="resetToToday()" style="background: #334155;">Сьогодні</button>
         </div>
     </header>
 
-    <div class="spirals-grid" id="spiralsContainer">
-        <div class="spiral-card" onclick="openModal(0)">
-            <h3 id="title-0">День 1</h3>
-            <div class="spiral-container"><svg id="spiral-0"></svg></div>
-        </div>
-        <div class="spiral-card" onclick="openModal(1)">
-            <h3 id="title-1">День 2</h3>
-            <div class="spiral-container"><svg id="spiral-1"></svg></div>
-        </div>
-        <div class="spiral-card" onclick="openModal(2)">
-            <h3 id="title-2">День 3</h3>
-            <div class="spiral-container"><svg id="spiral-2"></svg></div>
+    <div class="main-container">
+        <div class="spiral-card" onclick="openModal()">
+            <div class="spiral-container"><svg id="main-spiral"></svg></div>
         </div>
     </div>
 
@@ -364,7 +355,7 @@ function getDashboardHtml(dbDataJson) {
         const REAL_DB_DATA = ${dbDataJson};
 
         let baseDate = new Date();
-        let activeModalIndex = null;
+        let isModalOpen = false;
 
         function createSpiralPath(startRadius, endRadius, width, startAngle, endAngle) {
             const x1 = startRadius * Math.sin(startAngle);
@@ -382,7 +373,7 @@ function getDashboardHtml(dbDataJson) {
                    " A " + startRadius + "," + startRadius + " 0 0 0 " + x1 + "," + y1;
         }
 
-function renderSpiral(selector, dateObj, isFullscreen = false) {
+        function renderSpiral(selector, dateObj, isFullscreen = false) {
             const svg = d3.select("#" + selector);
             svg.html('');
             
@@ -442,8 +433,6 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
                     if (segStartSec <= midSec && segEndSec > midSec) {
                         const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
                         const midAngle = (startAngle + endAngle) / 2;
-                        
-                        // Перевіряємо, чи такий бос уже доданий (щоб уникнути дублів на стиках сегментів)
                         if (!bossLabelsToDraw.some(b => b.name === matchedBoss.name)) {
                             bossLabelsToDraw.push({
                                 name: matchedBoss.name,
@@ -477,12 +466,10 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
                     .text(h);
             }
 
-            // === РОЗУМНИЙ АЛГОРИТМ ЗАХИСТУ ВІД НАКЛАДАННЯ ВИНОСОК ===
+            // Розумний алгоритм розведення виносок з захистом від колізій
             if (bossLabelsToDraw.length > 0) {
-                // Сортуємо босів за кутом розташування (від верху за годинниковою стрілкою)
                 bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
-
-                const minLabelSpacing = Math.round(28 * scaleFactor); // Мінімальна вертикальна дистанція між текстами
+                const minLabelSpacing = Math.round(28 * scaleFactor);
                 const processedLabels = [];
 
                 bossLabelsToDraw.forEach(function(lbl, index) {
@@ -492,25 +479,18 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
                     let lx = labelRadius * Math.sin(lbl.angle);
                     let ly = labelRadius * -Math.cos(lbl.angle);
 
-                    // Перевіряємо колізію з попереднім підписом
                     if (index > 0) {
                         const prev = processedLabels[index - 1];
                         const yDiff = ly - prev.y;
                         const xDiff = Math.abs(lx - prev.x);
 
-                        // Якщо підписи занадто близько один до одного по вертикалі і знаходяться на одному боці екрана
                         if (Math.abs(yDiff) < minLabelSpacing && xDiff < 100) {
-                            if (yDiff >= 0) {
-                                ly = prev.y + minLabelSpacing;
-                            } else {
-                                ly = prev.y - minLabelSpacing;
-                            }
+                            ly = yDiff >= 0 ? prev.y + minLabelSpacing : prev.y - minLabelSpacing;
                         }
                     }
 
                     processedLabels.push({ x: lx, y: ly });
 
-                    // Малюємо пунктирну лінію-виноску
                     g.append('line')
                         .attr('x1', lbl.x)
                         .attr('y1', lbl.y)
@@ -520,7 +500,6 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
                         .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
                         .attr('stroke-dasharray', '5,4');
 
-                    // Малюємо назву епіка
                     g.append('text')
                         .attr('x', lx + (lx >= 0 ? 12 : -12))
                         .attr('y', ly)
@@ -535,27 +514,15 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
         }
 
         function updateView() {
-            for (let i = 0; i < 3; i++) {
-                let targetDate = new Date(baseDate);
-                targetDate.setDate(baseDate.getDate() + i);
-                
-                let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'short' });
-                let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' });
-                
-                document.getElementById('title-' + i).innerText = dayName.toUpperCase() + ' (' + dateStr + ')';
-                renderSpiral('spiral-' + i, targetDate, false);
-            }
+            let dayName = baseDate.toLocaleDateString('uk-UA', { weekday: 'long' });
+            let dateStr = baseDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            
+            document.getElementById('currentDateTitle').innerText = dayName.toUpperCase() + ' — ' + dateStr;
+            renderSpiral('main-spiral', baseDate, false);
 
-            let d1 = new Date(baseDate).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
-            let d3 = new Date(baseDate);
-            d3.setDate(baseDate.getDate() + 2);
-            let d3Str = d3.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', year: 'numeric' });
-            document.getElementById('currentRange').innerText = d1 + ' — ' + d3Str;
-
-            if (activeModalIndex !== null) {
-                let targetDate = new Date(baseDate);
-                targetDate.setDate(baseDate.getDate() + activeModalIndex);
-                renderSpiral('modal-spiral', targetDate, true);
+            if (isModalOpen) {
+                document.getElementById('modalTitle').innerText = dayName.toUpperCase() + ' — ' + dateStr;
+                renderSpiral('modal-spiral', baseDate, true);
             }
         }
 
@@ -569,21 +536,18 @@ function renderSpiral(selector, dateObj, isFullscreen = false) {
             updateView();
         }
 
-        function openModal(index) {
-            activeModalIndex = index;
-            let targetDate = new Date(baseDate);
-            targetDate.setDate(baseDate.getDate() + index);
-            
-            let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'long' });
-            let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        function openModal() {
+            isModalOpen = true;
+            let dayName = baseDate.toLocaleDateString('uk-UA', { weekday: 'long' });
+            let dateStr = baseDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
             
             document.getElementById('modalTitle').innerText = dayName.toUpperCase() + ' — ' + dateStr;
             document.getElementById('modal').classList.add('active');
-            renderSpiral('modal-spiral', targetDate, true);
+            renderSpiral('modal-spiral', baseDate, true);
         }
 
         function closeModal() {
-            activeModalIndex = null;
+            isModalOpen = false;
             document.getElementById('modal').classList.remove('active');
         }
 
