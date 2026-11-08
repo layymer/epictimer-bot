@@ -382,7 +382,7 @@ function getDashboardHtml(dbDataJson) {
                    " A " + startRadius + "," + startRadius + " 0 0 0 " + x1 + "," + y1;
         }
 
-        function renderSpiral(selector, dateObj, isFullscreen = false) {
+function renderSpiral(selector, dateObj, isFullscreen = false) {
             const svg = d3.select("#" + selector);
             svg.html('');
             
@@ -442,14 +442,18 @@ function getDashboardHtml(dbDataJson) {
                     if (segStartSec <= midSec && segEndSec > midSec) {
                         const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
                         const midAngle = (startAngle + endAngle) / 2;
-                        bossLabelsToDraw.push({
-                            name: matchedBoss.name,
-                            color: BOSS_COLORS[matchedBoss.name],
-                            x: midRadius * Math.sin(midAngle),
-                            y: midRadius * -Math.cos(midAngle),
-                            angle: midAngle,
-                            segIndex: i
-                        });
+                        
+                        // Перевіряємо, чи такий бос уже доданий (щоб уникнути дублів на стиках сегментів)
+                        if (!bossLabelsToDraw.some(b => b.name === matchedBoss.name)) {
+                            bossLabelsToDraw.push({
+                                name: matchedBoss.name,
+                                color: BOSS_COLORS[matchedBoss.name],
+                                x: midRadius * Math.sin(midAngle),
+                                y: midRadius * -Math.cos(midAngle),
+                                angle: midAngle,
+                                segIndex: i
+                            });
+                        }
                     }
                 }
             }
@@ -473,32 +477,61 @@ function getDashboardHtml(dbDataJson) {
                     .text(h);
             }
 
-            bossLabelsToDraw.forEach(function(lbl) {
-                const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
-                const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(75 * scaleFactor);
+            // === РОЗУМНИЙ АЛГОРИТМ ЗАХИСТУ ВІД НАКЛАДАННЯ ВИНОСОК ===
+            if (bossLabelsToDraw.length > 0) {
+                // Сортуємо босів за кутом розташування (від верху за годинниковою стрілкою)
+                bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
 
-                const lx = labelRadius * Math.sin(lbl.angle);
-                const ly = labelRadius * -Math.cos(lbl.angle);
+                const minLabelSpacing = Math.round(28 * scaleFactor); // Мінімальна вертикальна дистанція між текстами
+                const processedLabels = [];
 
-                g.append('line')
-                    .attr('x1', lbl.x)
-                    .attr('y1', lbl.y)
-                    .attr('x2', lx)
-                    .attr('y2', ly)
-                    .attr('stroke', lbl.color)
-                    .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
-                    .attr('stroke-dasharray', '5,4');
+                bossLabelsToDraw.forEach(function(lbl, index) {
+                    const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
+                    const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(75 * scaleFactor);
 
-                g.append('text')
-                    .attr('x', lx + (lx >= 0 ? 12 : -12))
-                    .attr('y', ly)
-                    .attr('dy', '0.35em')
-                    .attr('font-size', Math.round(18 * scaleFactor) + 'px')
-                    .attr('font-weight', 'bold')
-                    .attr('text-anchor', lx >= 0 ? 'start' : 'end')
-                    .attr('fill', lbl.color)
-                    .text(lbl.name);
-            });
+                    let lx = labelRadius * Math.sin(lbl.angle);
+                    let ly = labelRadius * -Math.cos(lbl.angle);
+
+                    // Перевіряємо колізію з попереднім підписом
+                    if (index > 0) {
+                        const prev = processedLabels[index - 1];
+                        const yDiff = ly - prev.y;
+                        const xDiff = Math.abs(lx - prev.x);
+
+                        // Якщо підписи занадто близько один до одного по вертикалі і знаходяться на одному боці екрана
+                        if (Math.abs(yDiff) < minLabelSpacing && xDiff < 100) {
+                            if (yDiff >= 0) {
+                                ly = prev.y + minLabelSpacing;
+                            } else {
+                                ly = prev.y - minLabelSpacing;
+                            }
+                        }
+                    }
+
+                    processedLabels.push({ x: lx, y: ly });
+
+                    // Малюємо пунктирну лінію-виноску
+                    g.append('line')
+                        .attr('x1', lbl.x)
+                        .attr('y1', lbl.y)
+                        .attr('x2', lx)
+                        .attr('y2', ly)
+                        .attr('stroke', lbl.color)
+                        .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
+                        .attr('stroke-dasharray', '5,4');
+
+                    // Малюємо назву епіка
+                    g.append('text')
+                        .attr('x', lx + (lx >= 0 ? 12 : -12))
+                        .attr('y', ly)
+                        .attr('dy', '0.35em')
+                        .attr('font-size', Math.round(18 * scaleFactor) + 'px')
+                        .attr('font-weight', 'bold')
+                        .attr('text-anchor', lx >= 0 ? 'start' : 'end')
+                        .attr('fill', lbl.color)
+                        .text(lbl.name);
+                });
+            }
         }
 
         function updateView() {
