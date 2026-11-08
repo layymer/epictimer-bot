@@ -74,7 +74,7 @@ export default {
       }
 
       return new Response(JSON.stringify({
-        type: 8, // APPLICATION_COMMAND_AUTOCOMPLETE_RESULT
+        type: 8,
         data: { choices: choices }
       }), {
         headers: { 'Content-Type': 'application/json' },
@@ -85,7 +85,7 @@ export default {
     if (interaction.type === 2) {
       const { name, options } = interaction.data;
 
-      // КОМАНДА /kill (з урахуванням київського часу UTC+2)
+      // КОМАНДА /kill
       if (name === 'kill') {
         const bossNameOpt = options?.find(opt => opt.name === 'boss')?.value;
         const timeStrOpt = options?.find(opt => opt.name === 'time')?.value;
@@ -108,7 +108,6 @@ export default {
         }
 
         const UKRAINE_OFFSET_HOURS = 2;
-
         let targetYear, targetMonth, targetDay;
 
         if (dateStrOpt) {
@@ -367,7 +366,7 @@ function getDashboardHtml(dbDataJson) {
         let baseDate = new Date();
         let activeModalIndex = null;
 
-        const createSpiralPath = (startRadius, endRadius, width, startAngle, endAngle) => {
+        function createSpiralPath(startRadius, endRadius, width, startAngle, endAngle) {
             const x1 = startRadius * Math.sin(startAngle);
             const y1 = startRadius * -Math.cos(startAngle);
             const x2 = (startRadius + width) * Math.sin(startAngle);
@@ -376,23 +375,22 @@ function getDashboardHtml(dbDataJson) {
             const y3 = endRadius * -Math.cos(endAngle);
             const x4 = (endRadius + width) * Math.sin(endAngle);
             const y4 = (endRadius + width) * -Math.cos(endAngle);
-            return \`
-                M \${x1},\${y1}
-                L \${x2},\${y2}
-                A \${startRadius+width},\${startRadius+width} 1 0 1 \${x4},\${y4}
-                L \${x3},\${y3}
-                A \${startRadius},\${startRadius} 0 0 0 \${x1},\${y1}\`;
-        };
+            return "M " + x1 + "," + y1 +
+                   " L " + x2 + "," + y2 +
+                   " A " + (startRadius + width) + "," + (startRadius + width) + " 1 0 1 " + x4 + "," + y4 +
+                   " L " + x3 + "," + y3 +
+                   " A " + startRadius + "," + startRadius + " 0 0 0 " + x1 + "," + y1;
+        }
 
         function renderSpiral(selector, dateObj, isFullscreen = false) {
-            const svg = d3.select(\`#\${selector}\`);
+            const svg = d3.select("#" + selector);
             svg.html('');
             
             const viewBoxSize = isFullscreen ? 1000 : 680;
             const center = viewBoxSize / 2;
             
-            svg.attr("viewBox", \`0 0 \${viewBoxSize} \${viewBoxSize}\`);
-            const g = svg.append('g').attr('transform', \`translate(\${center},\${center})\`);
+            svg.attr("viewBox", "0 0 " + viewBoxSize + " " + viewBoxSize);
+            const g = svg.append('g').attr('transform', "translate(" + center + "," + center + ")");
 
             const scaleFactor = isFullscreen ? 1.5 : 1.0;
             const ARC_WIDTH = Math.round(42 * scaleFactor);
@@ -421,7 +419,8 @@ function getDashboardHtml(dbDataJson) {
                 let fillColor = '#1e293b';
                 let matchedBoss = null;
 
-                for (const boss of REAL_DB_DATA) {
+                for (let j = 0; j < REAL_DB_DATA.length; j++) {
+                    const boss = REAL_DB_DATA[j];
                     if (boss.min_respawn < segEndSec && boss.max_respawn > segStartSec) {
                         fillColor = BOSS_COLORS[boss.name] || '#38bdf8';
                         matchedBoss = boss;
@@ -467,14 +466,14 @@ function getDashboardHtml(dbDataJson) {
                     .attr('x', textX)
                     .attr('y', textY)
                     .attr('dy', '0.35em')
-                    .attr('font-size', \`\${Math.round(16 * scaleFactor)}px\`)
+                    .attr('font-size', Math.round(16 * scaleFactor) + 'px')
                     .attr('font-weight', 'bold')
                     .attr('text-anchor', 'middle')
                     .attr('fill', '#ffffff')
                     .text(h);
             }
 
-            bossLabelsToDraw.forEach(lbl => {
+            bossLabelsToDraw.forEach(function(lbl) {
                 const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
                 const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(75 * scaleFactor);
 
@@ -494,7 +493,7 @@ function getDashboardHtml(dbDataJson) {
                     .attr('x', lx + (lx >= 0 ? 12 : -12))
                     .attr('y', ly)
                     .attr('dy', '0.35em')
-                    .attr('font-size', \`\${Math.round(18 * scaleFactor)}px\`)
+                    .attr('font-size', Math.round(18 * scaleFactor) + 'px')
                     .attr('font-weight', 'bold')
                     .attr('text-anchor', lx >= 0 ? 'start' : 'end')
                     .attr('fill', lbl.color)
@@ -510,15 +509,15 @@ function getDashboardHtml(dbDataJson) {
                 let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'short' });
                 let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' });
                 
-                document.getElementById(\`title-\${i}\`).innerText = \`\${dayName.toUpperCase()} (\${dateStr})\`;
-                renderSpiral(\`spiral-\${i}\`, targetDate, false);
+                document.getElementById('title-' + i).innerText = dayName.toUpperCase() + ' (' + dateStr + ')';
+                renderSpiral('spiral-' + i, targetDate, false);
             }
 
             let d1 = new Date(baseDate).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
             let d3 = new Date(baseDate);
             d3.setDate(baseDate.getDate() + 2);
             let d3Str = d3.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', year: 'numeric' });
-            document.getElementById('currentRange').innerText = \`\${d1} — \${d3Str}\`;
+            document.getElementById('currentRange').innerText = d1 + ' — ' + d3Str;
 
             if (activeModalIndex !== null) {
                 let targetDate = new Date(baseDate);
@@ -545,7 +544,7 @@ function getDashboardHtml(dbDataJson) {
             let dayName = targetDate.toLocaleDateString('uk-UA', { weekday: 'long' });
             let dateStr = targetDate.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
             
-            document.getElementById('modalTitle').innerText = \`\${dayName.toUpperCase()} — \${dateStr}\`;
+            document.getElementById('modalTitle').innerText = dayName.toUpperCase() + ' — ' + dateStr;
             document.getElementById('modal').classList.add('active');
             renderSpiral('modal-spiral', targetDate, true);
         }
@@ -555,7 +554,7 @@ function getDashboardHtml(dbDataJson) {
             document.getElementById('modal').classList.remove('active');
         }
 
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeModal();
         });
 
