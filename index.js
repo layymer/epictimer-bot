@@ -1,6 +1,5 @@
 import { verifyKey } from 'discord-interactions';
 
-// База (годин до початку респу) та саме вікно (години випадкового розкиду)
 const BOSS_DATA = {
   "Queen Ant": { base: 17, window: 4 },
   "Core": { base: 48, window: 4 },
@@ -11,17 +10,41 @@ const BOSS_DATA = {
   "Beleth": { base: 342, window: 4 }
 };
 
+// Універсальна функція для проєкції респів у майбутнє (якщо минули — рухаємо вперед)
+function getProjectedBoss(bossName, minRespawn, maxRespawn) {
+  const bossInfo = BOSS_DATA[bossName];
+  if (!bossInfo) return { name: bossName, min_respawn: minRespawn, max_respawn: maxRespawn };
+
+  const currentSec = Math.floor(Date.now() / 1000);
+  const totalCycleSeconds = (bossInfo.base + bossInfo.window) * 3600;
+
+  let currentMin = minRespawn;
+  let currentMax = maxRespawn;
+
+  // Якщо вікно вже повністю в минулому, додаємо повні цикли, доки воно не опиниться в майбутньому
+  while (currentMax < currentSec) {
+    currentMin += totalCycleSeconds;
+    currentMax += totalCycleSeconds;
+  }
+
+  return { name: bossName, min_respawn: currentMin, max_respawn: currentMax };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. ВЕБ-ДАШБОРД (HTTP GET) — віддає HTML з даними з D1
+    // 1. ВЕБ-ДАШБОРД (HTTP GET) — віддає HTML із проєкцією всіх майбутніх респів
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
         `SELECT name, min_respawn, max_respawn FROM bosses`
       ).all();
 
-      const dbDataJson = JSON.stringify(results || []);
+      const projectedResults = (results || []).map(row => {
+        return getProjectedBoss(row.name, row.min_respawn, row.max_respawn);
+      });
+
+      const dbDataJson = JSON.stringify(projectedResults);
       const htmlContent = getDashboardHtml(dbDataJson);
 
       return new Response(htmlContent, {
@@ -142,24 +165,16 @@ export default {
         }
 
         const utcDate = new Date(Date.UTC(targetYear, targetMonth, targetDay, hours - UKRAINE_OFFSET_HOURS, minutes, 0));
-        let killTimestamp = Math.floor(utcDate.getTime() / 1000);
+        const killTimestamp = Math.floor(utcDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
         let minRespawn = killTimestamp + (bossInfo.base * 3600);
         let maxRespawn = minRespawn + (bossInfo.window * 3600);
 
-        // ЛОГІКА ПРОЄКЦІЇ НА НАСТУПНИЙ РЕСП, ЯКЩО МИНУЛО
-        const currentSec = Math.floor(Date.now() / 1000);
-        const totalCycleSeconds = (bossInfo.base + bossInfo.window) * 3600;
-
-        let projectedNotice = "";
-        if (maxRespawn < currentSec) {
-          const cyclesPassed = Math.ceil((currentSec - maxRespawn) / totalCycleSeconds);
-          killTimestamp += cyclesPassed * totalCycleSeconds;
-          minRespawn += cyclesPassed * totalCycleSeconds;
-          maxRespawn += cyclesPassed * totalCycleSeconds;
-          projectedNotice = "\n🔄 *Попереднє вікно минуло, розклад автоматично проєктовано на наступний респ!*";
-        }
+        // Проєктуємо одразу при збереженні
+        const projected = getProjectedBoss(matchedBoss, minRespawn, maxRespawn);
+        minRespawn = projected.min_respawn;
+        maxRespawn = projected.max_respawn;
 
         await env.DB.prepare(
           `INSERT INTO bosses (name, min_respawn, max_respawn) VALUES (?1, ?2, ?3) 
@@ -167,7 +182,7 @@ export default {
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
         return jsonResponse({
-          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)${projectedNotice}`
+          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Актуальне вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
       }
 
@@ -184,11 +199,13 @@ export default {
           });
         }
 
+        const projectedResults = results.map(row => getProjectedBoss(row.name, row.min_respawn, row.max_respawn));
+
         const now = Math.floor(Date.now() / 1000);
         let fields = [];
         let titleSuffix = "поточний розклад";
 
-        let filteredResults = results;
+        let filteredResults = projectedResults;
         if (filterDateOpt) {
           const startOfDay = new Date(filterDateOpt);
           startOfDay.setHours(0, 0, 0, 0);
@@ -198,7 +215,7 @@ export default {
           endOfDay.setHours(23, 59, 59, 999);
           const endSec = Math.floor(endOfDay.getTime() / 1000);
 
-          filteredResults = results.filter(row => 
+          filteredResults = projectedResults.filter(row => 
             (row.min_respawn <= endSec && row.max_respawn >= startSec)
           );
 
@@ -332,7 +349,7 @@ function getDashboardHtml(dbDataJson) {
 <body>
 
     <header>
-        <h1>Lineage 2 Epic Boss Spiral Timers</h1>
+        <h1>Lineage 2 Epic Boss Spiral Timer</h1>
         <div class="nav-controls">
             <button onclick="changeDay(-1)">◀ Попередній день</button>
             <span id="currentDateTitle">Завантаження...</span>
