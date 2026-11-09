@@ -10,31 +10,37 @@ const BOSS_DATA = {
   "Beleth": { base: 342, window: 4 }
 };
 
-// Універсальна функція для проєкції респів у майбутнє (якщо минули — рухаємо вперед)
+// Універсальна функція для проєкції респів у майбутнє
 function getProjectedBoss(bossName, minRespawn, maxRespawn) {
   const bossInfo = BOSS_DATA[bossName];
-  if (!bossInfo) return { name: bossName, min_respawn: minRespawn, max_respawn: maxRespawn };
+  if (!bossInfo) return { name: bossName, min_respawn: minRespawn, max_respawn: maxRespawn, isProjected: false };
 
   const currentSec = Math.floor(Date.now() / 1000);
   const totalCycleSeconds = (bossInfo.base + bossInfo.window) * 3600;
 
   let currentMin = minRespawn;
   let currentMax = maxRespawn;
+  let projected = false;
 
-  // Якщо вікно вже повністю в минулому, додаємо повні цикли, доки воно не опиниться в майбутньому
   while (currentMax < currentSec) {
     currentMin += totalCycleSeconds;
     currentMax += totalCycleSeconds;
+    projected = true;
   }
 
-  return { name: bossName, min_respawn: currentMin, max_respawn: currentMax };
+  return { 
+    name: bossName, 
+    min_respawn: currentMin, 
+    max_respawn: currentMax, 
+    isProjected: projected 
+  };
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. ВЕБ-ДАШБОРД (HTTP GET) — віддає HTML із проєкцією всіх майбутніх респів
+    // 1. ВЕБ-ДАШБОРД (HTTP GET)
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
         `SELECT name, min_respawn, max_respawn FROM bosses`
@@ -171,7 +177,6 @@ export default {
         let minRespawn = killTimestamp + (bossInfo.base * 3600);
         let maxRespawn = minRespawn + (bossInfo.window * 3600);
 
-        // Проєктуємо одразу при збереженні
         const projected = getProjectedBoss(matchedBoss, minRespawn, maxRespawn);
         minRespawn = projected.min_respawn;
         maxRespawn = projected.max_respawn;
@@ -182,7 +187,7 @@ export default {
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
         return jsonResponse({
-          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Актуальне вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
+          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
         });
       }
 
@@ -440,24 +445,33 @@ function getDashboardHtml(dbDataJson) {
 
                 let fillColor = '#1e293b';
                 let matchedBoss = null;
+                let isProjected = false;
 
                 for (let j = 0; j < REAL_DB_DATA.length; j++) {
                     const boss = REAL_DB_DATA[j];
                     if (boss.min_respawn < segEndSec && boss.max_respawn > segStartSec) {
                         fillColor = BOSS_COLORS[boss.name] || '#38bdf8';
                         matchedBoss = boss;
+                        isProjected = boss.isProjected;
                         break;
                     }
                 }
 
                 let opacity = (segEndSec < nowSec) ? 0.35 : 0.95;
 
-                g.append('path')
+                const pathElem = g.append('path')
                     .attr('d', path)
                     .style('fill', fillColor)
                     .style('opacity', opacity)
                     .style('stroke', '#0b132b')
                     .style('stroke-width', isFullscreen ? '3px' : '2px');
+
+                // Якщо це проєкція (майбутній цикл), робимо сектор у стилі штрихкоду (пунктирне обведення та легкий штриховий візерунок)
+                if (matchedBoss && isProjected) {
+                    pathElem.style('stroke-dasharray', '6,4')
+                            .style('stroke', '#ffffff')
+                            .style('stroke-width', isFullscreen ? '2px' : '1.5px');
+                }
 
                 if (matchedBoss) {
                     const midSec = (matchedBoss.min_respawn + matchedBoss.max_respawn) / 2;
@@ -466,12 +480,13 @@ function getDashboardHtml(dbDataJson) {
                         const midAngle = (startAngle + endAngle) / 2;
                         if (!bossLabelsToDraw.some(b => b.name === matchedBoss.name)) {
                             bossLabelsToDraw.push({
-                                name: matchedBoss.name,
+                                name: matchedBoss.name + (isProjected ? " (Прогноз)" : ""),
                                 color: BOSS_COLORS[matchedBoss.name],
                                 x: midRadius * Math.sin(midAngle),
                                 y: midRadius * -Math.cos(midAngle),
                                 angle: midAngle,
-                                segIndex: i
+                                segIndex: i,
+                                isProjected: isProjected
                             });
                         }
                     }
@@ -521,14 +536,15 @@ function getDashboardHtml(dbDataJson) {
 
                     processedLabels.push({ x: lx, y: ly });
 
-                    g.append('line')
+                    // Для прогнозів виноска теж робиться штриховою
+                    const line = g.append('line')
                         .attr('x1', lbl.x)
                         .attr('y1', lbl.y)
                         .attr('x2', lx)
                         .attr('y2', ly)
                         .attr('stroke', lbl.color)
                         .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
-                        .attr('stroke-dasharray', '5,4');
+                        .attr('stroke-dasharray', lbl.isProjected ? '2,4' : '5,4');
 
                     g.append('text')
                         .attr('x', lx + (lx >= 0 ? 12 : -12))
