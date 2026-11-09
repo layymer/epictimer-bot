@@ -413,7 +413,6 @@ function getDashboardHtml(dbDataJson) {
                    " A " + startRadius + "," + startRadius + " 0 0 0 " + x1 + "," + y1;
         }
 
-        // Функція для створення під-сектора (поздовжньої або часткової дуги при перетині кількох босів)
         function createPartialSpiralPath(startRadius, endRadius, totalWidth, startAngle, endAngle, index, total) {
             const width = totalWidth / total;
             const subStartRadius = startRadius + (index * width);
@@ -433,6 +432,11 @@ function getDashboardHtml(dbDataJson) {
                    " A " + (subStartRadius + subWidth) + "," + (subStartRadius + subWidth) + " 1 0 1 " + x4 + "," + y4 +
                    " L " + x3 + "," + y3 +
                    " A " + subStartRadius + "," + subStartRadius + " 0 0 0 " + x1 + "," + y1;
+        }
+
+        function formatTime(unixSec) {
+            const d = new Date(unixSec * 1000);
+            return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
         }
 
         function renderSpiral(selector, dateObj, isFullscreen = false) {
@@ -467,7 +471,6 @@ function getDashboardHtml(dbDataJson) {
                 const startRadius = INITIAL_RADIUS + (i * stepIncrement);
                 const endRadius = INITIAL_RADIUS + ((i + 1) * stepIncrement);
                 
-                // Знаходимо всіх босів, чиє вікно перетинає цей сегмент
                 const matchedBosses = [];
                 for (let j = 0; j < REAL_DB_DATA.length; j++) {
                     const boss = REAL_DB_DATA[j];
@@ -479,7 +482,6 @@ function getDashboardHtml(dbDataJson) {
                 let opacity = (segEndSec < nowSec) ? 0.35 : 0.95;
 
                 if (matchedBosses.length === 0) {
-                    // Якщо босів немає, малюємо пустий сегмент
                     const path = createSpiralPath(startRadius, endRadius, ARC_WIDTH, startAngle, endAngle);
                     g.append('path')
                         .attr('d', path)
@@ -488,7 +490,6 @@ function getDashboardHtml(dbDataJson) {
                         .style('stroke', '#0b132b')
                         .style('stroke-width', isFullscreen ? '3px' : '2px');
                 } else {
-                    // Якщо кілька босів накладаються — ділимо ширину сектора між ними
                     matchedBosses.forEach((boss, idx) => {
                         const subPath = createPartialSpiralPath(startRadius, endRadius, ARC_WIDTH, startAngle, endAngle, idx, matchedBosses.length);
                         const fillColor = BOSS_COLORS[boss.name] || '#38bdf8';
@@ -507,15 +508,17 @@ function getDashboardHtml(dbDataJson) {
                     });
                 }
 
-                // Додаємо підписи для середини сектору кожного боса
                 matchedBosses.forEach(boss => {
                     const midSec = (boss.min_respawn + boss.max_respawn) / 2;
                     if (segStartSec <= midSec && segEndSec > midSec) {
                         const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
                         const midAngle = (startAngle + endAngle) / 2;
-                        if (!bossLabelsToDraw.some(b => b.name.includes(boss.name))) {
+                        if (!bossLabelsToDraw.some(b => b.rawName === boss.name)) {
+                            const timeStr = formatTime(boss.min_respawn) + ' — ' + formatTime(boss.max_respawn);
                             bossLabelsToDraw.push({
-                                name: boss.name + (boss.isProjected ? " (Прогноз)" : ""),
+                                rawName: boss.name,
+                                name: boss.name,
+                                timeStr: timeStr,
                                 color: BOSS_COLORS[boss.name],
                                 x: midRadius * Math.sin(midAngle),
                                 y: midRadius * -Math.cos(midAngle),
@@ -549,7 +552,7 @@ function getDashboardHtml(dbDataJson) {
 
             if (bossLabelsToDraw.length > 0) {
                 bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
-                const minLabelSpacing = Math.round(28 * scaleFactor);
+                const minLabelSpacing = Math.round(42 * scaleFactor); // збільшено для двох рядків тексту
                 const processedLabels = [];
 
                 bossLabelsToDraw.forEach(function(lbl, index) {
@@ -564,7 +567,7 @@ function getDashboardHtml(dbDataJson) {
                         const yDiff = ly - prev.y;
                         const xDiff = Math.abs(lx - prev.x);
 
-                        if (Math.abs(yDiff) < minLabelSpacing && xDiff < 100) {
+                        if (Math.abs(yDiff) < minLabelSpacing && xDiff < 120) {
                             ly = yDiff >= 0 ? prev.y + minLabelSpacing : prev.y - minLabelSpacing;
                         }
                     }
@@ -580,15 +583,27 @@ function getDashboardHtml(dbDataJson) {
                         .attr('stroke-width', isFullscreen ? '4px' : '2.5px')
                         .attr('stroke-dasharray', lbl.isProjected ? '2,4' : '5,4');
 
-                    g.append('text')
+                    const textGroup = g.append('text')
                         .attr('x', lx + (lx >= 0 ? 12 : -12))
                         .attr('y', ly)
-                        .attr('dy', '0.35em')
+                        .attr('text-anchor', lx >= 0 ? 'start' : 'end');
+
+                    // Рядок 1: Назва боса (та статус прогнозу)
+                    textGroup.append('tspan')
+                        .attr('dy', '-0.2em')
                         .attr('font-size', Math.round(18 * scaleFactor) + 'px')
                         .attr('font-weight', 'bold')
-                        .attr('text-anchor', lx >= 0 ? 'start' : 'end')
                         .attr('fill', lbl.color)
-                        .text(lbl.name);
+                        .text(lbl.name + (lbl.isProjected ? ' (Прогноз)' : ''));
+
+                    // Рядок 2: Точний час початку та кінця
+                    textGroup.append('tspan')
+                        .attr('x', lx + (lx >= 0 ? 12 : -12))
+                        .attr('dy', '1.3em')
+                        .attr('font-size', Math.round(14 * scaleFactor) + 'px')
+                        .attr('font-weight', 'normal')
+                        .attr('fill', '#94a3b8')
+                        .text(lbl.timeStr);
                 });
             }
         }
