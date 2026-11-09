@@ -171,11 +171,16 @@ export default {
         }
 
         const utcDate = new Date(Date.UTC(targetYear, targetMonth, targetDay, hours - UKRAINE_OFFSET_HOURS, minutes, 0));
-        const killTimestamp = Math.floor(utcDate.getTime() / 1000);
+        let killTimestamp = Math.floor(utcDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
         let minRespawn = killTimestamp + (bossInfo.base * 3600);
         let maxRespawn = minRespawn + (bossInfo.window * 3600);
+
+        // ЯКЩО ХВИЛИНИ РІВНІ 00 — ДОДАЄМО 1 ГОДИНУ ВИКЛЮЧНО ДО МАКСИМАЛЬНОГО РЕСПУ
+        if (minutes === 0) {
+          maxRespawn += 3600;
+        }
 
         const projected = getProjectedBoss(matchedBoss, minRespawn, maxRespawn);
         minRespawn = projected.min_respawn;
@@ -466,7 +471,6 @@ function getDashboardHtml(dbDataJson) {
                     .style('stroke', '#0b132b')
                     .style('stroke-width', isFullscreen ? '3px' : '2px');
 
-                // Якщо це проєкція (майбутній цикл), робимо сектор у стилі штрихкоду (пунктирне обведення та легкий штриховий візерунок)
                 if (matchedBoss && isProjected) {
                     pathElem.style('stroke-dasharray', '6,4')
                             .style('stroke', '#ffffff')
@@ -536,8 +540,7 @@ function getDashboardHtml(dbDataJson) {
 
                     processedLabels.push({ x: lx, y: ly });
 
-                    // Для прогнозів виноска теж робиться штриховою
-                    const line = g.append('line')
+                    g.append('line')
                         .attr('x1', lbl.x)
                         .attr('y1', lbl.y)
                         .attr('x2', lx)
