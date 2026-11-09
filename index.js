@@ -451,14 +451,13 @@ function getDashboardHtml(dbDataJson) {
             const stepIncrement = 2.2 * scaleFactor;
             const ANGLE_STEP = Math.PI / 6;
 
-            // Початок доби (00:00:00) в секундах для обраного дня
             const startOfDaySec = Math.floor(new Date(dateObj).setHours(0,0,0,0) / 1000);
             const nowSec = Math.floor(Date.now() / 1000);
 
-            const bossSegmentsMap = {}; // Збираємо всі сегменти для кожного боса, щоб точно знати його центр
+            const bossLabelsToDraw = [];
+            const MAX_OUTER_SPIRAL_RADIUS = INITIAL_RADIUS + (48 * stepIncrement) + ARC_WIDTH;
 
             for (let i = 0; i < 48; i++) {
-                // Кожний сегмент — це рівно 30 хвилин (1800 секунд) від початку доби
                 const segStartSec = startOfDaySec + (i * 1800);
                 const segEndSec = segStartSec + 1800;
 
@@ -502,29 +501,33 @@ function getDashboardHtml(dbDataJson) {
                             pathElem.style('stroke-dasharray', '4,3')
                                     .style('stroke', '#ffffff');
                         }
-
-                        // Зберігаємо координати для обчислення точного центру боса на спіралі
-                        const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
-                        const midAngle = (startAngle + endAngle) / 2;
-
-                        if (!bossSegmentsMap[boss.name]) {
-                            bossSegmentsMap[boss.name] = {
-                                name: boss.name,
-                                minRespawn: boss.min_respawn,
-                                maxRespawn: boss.max_respawn,
-                                isProjected: boss.isProjected,
-                                color: BOSS_COLORS[boss.name],
-                                angles: [],
-                                radii: []
-                            };
-                        }
-                        bossSegmentsMap[boss.name].angles.push(midAngle);
-                        bossSegmentsMap[boss.name].radii.push(midRadius);
                     });
                 }
+
+                // Знаходимо середню точку (середину вікна) для виноски кожного боса
+                matchedBosses.forEach(boss => {
+                    const midSec = (boss.min_respawn + boss.max_respawn) / 2;
+                    if (segStartSec <= midSec && segEndSec > midSec) {
+                        const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
+                        const midAngle = (startAngle + endAngle) / 2;
+                        
+                        if (!bossLabelsToDraw.some(b => b.name === boss.name)) {
+                            const timeStr = formatTime(boss.min_respawn) + ' — ' + formatTime(boss.max_respawn);
+                            bossLabelsToDraw.push({
+                                name: boss.name,
+                                timeStr: timeStr,
+                                color: BOSS_COLORS[boss.name],
+                                x: midRadius * Math.sin(midAngle),
+                                y: midRadius * -Math.cos(midAngle),
+                                angle: midAngle,
+                                segIndex: i,
+                                isProjected: boss.isProjected
+                            });
+                        }
+                    }
+                });
             }
 
-            // Малюємо цифри годин на шкалі спіралі
             for (let h = 0; h < 24; h++) {
                 const i = h * 2;
                 const angle = h * ANGLE_STEP + (ANGLE_STEP / 2);
@@ -544,33 +547,14 @@ function getDashboardHtml(dbDataJson) {
                     .text(h);
             }
 
-            // Формуємо масив виносок на основі реальних центрів секторів кожного боса
-            const bossLabelsToDraw = [];
-            Object.values(bossSegmentsMap).forEach(bData => {
-                // Знаходимо середній кут та радіус для секторів цього боса на даний день
-                const avgAngle = bData.angles.reduce((a, b) => a + b, 0) / bData.angles.length;
-                const avgRadius = bData.radii.reduce((a, b) => a + b, 0) / bData.radii.length;
-
-                const timeStr = formatTime(bData.minRespawn) + ' — ' + formatTime(bData.maxRespawn);
-
-                bossLabelsToDraw.push({
-                    name: bData.name,
-                    timeStr: timeStr,
-                    color: bData.color,
-                    x: avgRadius * Math.sin(avgAngle),
-                    y: avgRadius * -Math.cos(avgAngle),
-                    angle: avgAngle,
-                    isProjected: bData.isProjected
-                });
-            });
-
             if (bossLabelsToDraw.length > 0) {
                 bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
-                const minLabelSpacing = Math.round(42 * scaleFactor);
+                const minLabelSpacing = Math.round(45 * scaleFactor);
                 const processedLabels = [];
 
                 bossLabelsToDraw.forEach(function(lbl, index) {
-                    const labelRadius = MAX_OUTER_SPIRAL_RADIUS + Math.round(85 * scaleFactor);
+                    const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
+                    const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(85 * scaleFactor);
 
                     let lx = labelRadius * Math.sin(lbl.angle);
                     let ly = labelRadius * -Math.cos(lbl.angle);
@@ -580,14 +564,13 @@ function getDashboardHtml(dbDataJson) {
                         const yDiff = ly - prev.y;
                         const xDiff = Math.abs(lx - prev.x);
 
-                        if (Math.abs(yDiff) < minLabelSpacing && xDiff < 120) {
+                        if (Math.abs(yDiff) < minLabelSpacing && xDiff < 130) {
                             ly = yDiff >= 0 ? prev.y + minLabelSpacing : prev.y - minLabelSpacing;
                         }
                     }
 
                     processedLabels.push({ x: lx, y: ly });
 
-                    // Лінія виноски йде точно від реального сектора боса
                     g.append('line')
                         .attr('x1', lbl.x)
                         .attr('y1', lbl.y)
