@@ -177,7 +177,6 @@ export default {
         let minRespawn = killTimestamp + (bossInfo.base * 3600);
         let maxRespawn = minRespawn + (bossInfo.window * 3600);
 
-        // ЯКЩО ХВИЛИНИ РІВНІ 00 — ДОДАЄМО 1 ГОДИНУ ВИКЛЮЧНО ДО МАКСИМАЛЬНОГО РЕСПУ
         if (minutes === 0) {
           maxRespawn += 3600;
         }
@@ -414,6 +413,28 @@ function getDashboardHtml(dbDataJson) {
                    " A " + startRadius + "," + startRadius + " 0 0 0 " + x1 + "," + y1;
         }
 
+        // Функція для створення під-сектора (поздовжньої або часткової дуги при перетині кількох босів)
+        function createPartialSpiralPath(startRadius, endRadius, totalWidth, startAngle, endAngle, index, total) {
+            const width = totalWidth / total;
+            const subStartRadius = startRadius + (index * width);
+            const subEndRadius = endRadius + (index * width);
+            const subWidth = width;
+
+            const x1 = subStartRadius * Math.sin(startAngle);
+            const y1 = subStartRadius * -Math.cos(startAngle);
+            const x2 = (subStartRadius + subWidth) * Math.sin(startAngle);
+            const y2 = (subStartRadius + subWidth) * -Math.cos(startAngle);
+            const x3 = subEndRadius * Math.sin(endAngle);
+            const y3 = subEndRadius * -Math.cos(endAngle);
+            const x4 = (subEndRadius + subWidth) * Math.sin(endAngle);
+            const y4 = (subEndRadius + subWidth) * -Math.cos(endAngle);
+            return "M " + x1 + "," + y1 +
+                   " L " + x2 + "," + y2 +
+                   " A " + (subStartRadius + subWidth) + "," + (subStartRadius + subWidth) + " 1 0 1 " + x4 + "," + y4 +
+                   " L " + x3 + "," + y3 +
+                   " A " + subStartRadius + "," + subStartRadius + " 0 0 0 " + x1 + "," + y1;
+        }
+
         function renderSpiral(selector, dateObj, isFullscreen = false) {
             const svg = d3.select("#" + selector);
             svg.html('');
@@ -446,55 +467,65 @@ function getDashboardHtml(dbDataJson) {
                 const startRadius = INITIAL_RADIUS + (i * stepIncrement);
                 const endRadius = INITIAL_RADIUS + ((i + 1) * stepIncrement);
                 
-                const path = createSpiralPath(startRadius, endRadius, ARC_WIDTH, startAngle, endAngle);
-
-                let fillColor = '#1e293b';
-                let matchedBoss = null;
-                let isProjected = false;
-
+                // Знаходимо всіх босів, чиє вікно перетинає цей сегмент
+                const matchedBosses = [];
                 for (let j = 0; j < REAL_DB_DATA.length; j++) {
                     const boss = REAL_DB_DATA[j];
                     if (boss.min_respawn < segEndSec && boss.max_respawn > segStartSec) {
-                        fillColor = BOSS_COLORS[boss.name] || '#38bdf8';
-                        matchedBoss = boss;
-                        isProjected = boss.isProjected;
-                        break;
+                        matchedBosses.push(boss);
                     }
                 }
 
                 let opacity = (segEndSec < nowSec) ? 0.35 : 0.95;
 
-                const pathElem = g.append('path')
-                    .attr('d', path)
-                    .style('fill', fillColor)
-                    .style('opacity', opacity)
-                    .style('stroke', '#0b132b')
-                    .style('stroke-width', isFullscreen ? '3px' : '2px');
+                if (matchedBosses.length === 0) {
+                    // Якщо босів немає, малюємо пустий сегмент
+                    const path = createSpiralPath(startRadius, endRadius, ARC_WIDTH, startAngle, endAngle);
+                    g.append('path')
+                        .attr('d', path)
+                        .style('fill', '#1e293b')
+                        .style('opacity', opacity)
+                        .style('stroke', '#0b132b')
+                        .style('stroke-width', isFullscreen ? '3px' : '2px');
+                } else {
+                    // Якщо кілька босів накладаються — ділимо ширину сектора між ними
+                    matchedBosses.forEach((boss, idx) => {
+                        const subPath = createPartialSpiralPath(startRadius, endRadius, ARC_WIDTH, startAngle, endAngle, idx, matchedBosses.length);
+                        const fillColor = BOSS_COLORS[boss.name] || '#38bdf8';
 
-                if (matchedBoss && isProjected) {
-                    pathElem.style('stroke-dasharray', '6,4')
-                            .style('stroke', '#ffffff')
-                            .style('stroke-width', isFullscreen ? '2px' : '1.5px');
+                        const pathElem = g.append('path')
+                            .attr('d', subPath)
+                            .style('fill', fillColor)
+                            .style('opacity', opacity)
+                            .style('stroke', '#0b132b')
+                            .style('stroke-width', isFullscreen ? '2px' : '1px');
+
+                        if (boss.isProjected) {
+                            pathElem.style('stroke-dasharray', '4,3')
+                                    .style('stroke', '#ffffff');
+                        }
+                    });
                 }
 
-                if (matchedBoss) {
-                    const midSec = (matchedBoss.min_respawn + matchedBoss.max_respawn) / 2;
+                // Додаємо підписи для середини сектору кожного боса
+                matchedBosses.forEach(boss => {
+                    const midSec = (boss.min_respawn + boss.max_respawn) / 2;
                     if (segStartSec <= midSec && segEndSec > midSec) {
                         const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
                         const midAngle = (startAngle + endAngle) / 2;
-                        if (!bossLabelsToDraw.some(b => b.name === matchedBoss.name)) {
+                        if (!bossLabelsToDraw.some(b => b.name.includes(boss.name))) {
                             bossLabelsToDraw.push({
-                                name: matchedBoss.name + (isProjected ? " (Прогноз)" : ""),
-                                color: BOSS_COLORS[matchedBoss.name],
+                                name: boss.name + (boss.isProjected ? " (Прогноз)" : ""),
+                                color: BOSS_COLORS[boss.name],
                                 x: midRadius * Math.sin(midAngle),
                                 y: midRadius * -Math.cos(midAngle),
                                 angle: midAngle,
                                 segIndex: i,
-                                isProjected: isProjected
+                                isProjected: boss.isProjected
                             });
                         }
                     }
-                }
+                });
             }
 
             for (let h = 0; h < 24; h++) {
