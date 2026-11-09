@@ -10,7 +10,6 @@ const BOSS_DATA = {
   "Beleth": { base: 342, window: 4 }
 };
 
-// Універсальна функція для проєкції респів у майбутнє
 function getProjectedBoss(bossName, minRespawn, maxRespawn) {
   const bossInfo = BOSS_DATA[bossName];
   if (!bossInfo) return { name: bossName, min_respawn: minRespawn, max_respawn: maxRespawn, isProjected: false };
@@ -40,7 +39,6 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. ВЕБ-ДАШБОРД (HTTP GET)
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
         `SELECT name, min_respawn, max_respawn FROM bosses`
@@ -58,7 +56,6 @@ export default {
       });
     }
 
-    // 2. DISCORD INTERACTIONS (HTTP POST)
     if (request.method !== 'POST') {
       return new Response('Only POST/GET requests are allowed', { status: 405 });
     }
@@ -80,7 +77,6 @@ export default {
       });
     }
 
-    // AUTOCOMPLETE (Type 4)
     if (interaction.type === 4) {
       const choices = [];
       const UKRAINE_OFFSET_HOURS = 2;
@@ -455,13 +451,14 @@ function getDashboardHtml(dbDataJson) {
             const stepIncrement = 2.2 * scaleFactor;
             const ANGLE_STEP = Math.PI / 6;
 
+            // Початок доби (00:00:00) в секундах для обраного дня
             const startOfDaySec = Math.floor(new Date(dateObj).setHours(0,0,0,0) / 1000);
             const nowSec = Math.floor(Date.now() / 1000);
 
-            const bossLabelsToDraw = [];
-            const MAX_OUTER_SPIRAL_RADIUS = INITIAL_RADIUS + (48 * stepIncrement) + ARC_WIDTH;
+            const bossSegmentsMap = {}; // Збираємо всі сегменти для кожного боса, щоб точно знати його центр
 
             for (let i = 0; i < 48; i++) {
+                // Кожний сегмент — це рівно 30 хвилин (1800 секунд) від початку доби
                 const segStartSec = startOfDaySec + (i * 1800);
                 const segEndSec = segStartSec + 1800;
 
@@ -505,32 +502,29 @@ function getDashboardHtml(dbDataJson) {
                             pathElem.style('stroke-dasharray', '4,3')
                                     .style('stroke', '#ffffff');
                         }
-                    });
-                }
 
-                matchedBosses.forEach(boss => {
-                    const midSec = (boss.min_respawn + boss.max_respawn) / 2;
-                    if (segStartSec <= midSec && segEndSec > midSec) {
+                        // Зберігаємо координати для обчислення точного центру боса на спіралі
                         const midRadius = (startRadius + endRadius) / 2 + ARC_WIDTH / 2;
                         const midAngle = (startAngle + endAngle) / 2;
-                        if (!bossLabelsToDraw.some(b => b.rawName === boss.name)) {
-                            const timeStr = formatTime(boss.min_respawn) + ' — ' + formatTime(boss.max_respawn);
-                            bossLabelsToDraw.push({
-                                rawName: boss.name,
+
+                        if (!bossSegmentsMap[boss.name]) {
+                            bossSegmentsMap[boss.name] = {
                                 name: boss.name,
-                                timeStr: timeStr,
+                                minRespawn: boss.min_respawn,
+                                maxRespawn: boss.max_respawn,
+                                isProjected: boss.isProjected,
                                 color: BOSS_COLORS[boss.name],
-                                x: midRadius * Math.sin(midAngle),
-                                y: midRadius * -Math.cos(midAngle),
-                                angle: midAngle,
-                                segIndex: i,
-                                isProjected: boss.isProjected
-                            });
+                                angles: [],
+                                radii: []
+                            };
                         }
-                    }
-                });
+                        bossSegmentsMap[boss.name].angles.push(midAngle);
+                        bossSegmentsMap[boss.name].radii.push(midRadius);
+                    });
+                }
             }
 
+            // Малюємо цифри годин на шкалі спіралі
             for (let h = 0; h < 24; h++) {
                 const i = h * 2;
                 const angle = h * ANGLE_STEP + (ANGLE_STEP / 2);
@@ -550,14 +544,33 @@ function getDashboardHtml(dbDataJson) {
                     .text(h);
             }
 
+            // Формуємо масив виносок на основі реальних центрів секторів кожного боса
+            const bossLabelsToDraw = [];
+            Object.values(bossSegmentsMap).forEach(bData => {
+                // Знаходимо середній кут та радіус для секторів цього боса на даний день
+                const avgAngle = bData.angles.reduce((a, b) => a + b, 0) / bData.angles.length;
+                const avgRadius = bData.radii.reduce((a, b) => a + b, 0) / bData.radii.length;
+
+                const timeStr = formatTime(bData.minRespawn) + ' — ' + formatTime(bData.maxRespawn);
+
+                bossLabelsToDraw.push({
+                    name: bData.name,
+                    timeStr: timeStr,
+                    color: bData.color,
+                    x: avgRadius * Math.sin(avgAngle),
+                    y: avgRadius * -Math.cos(avgAngle),
+                    angle: avgAngle,
+                    isProjected: bData.isProjected
+                });
+            });
+
             if (bossLabelsToDraw.length > 0) {
                 bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
-                const minLabelSpacing = Math.round(42 * scaleFactor); // збільшено для двох рядків тексту
+                const minLabelSpacing = Math.round(42 * scaleFactor);
                 const processedLabels = [];
 
                 bossLabelsToDraw.forEach(function(lbl, index) {
-                    const outerRadiusAtAngle = INITIAL_RADIUS + ((lbl.segIndex % 24 + 24) * stepIncrement) + ARC_WIDTH;
-                    const labelRadius = Math.max(MAX_OUTER_SPIRAL_RADIUS, outerRadiusAtAngle) + Math.round(75 * scaleFactor);
+                    const labelRadius = MAX_OUTER_SPIRAL_RADIUS + Math.round(85 * scaleFactor);
 
                     let lx = labelRadius * Math.sin(lbl.angle);
                     let ly = labelRadius * -Math.cos(lbl.angle);
@@ -574,6 +587,7 @@ function getDashboardHtml(dbDataJson) {
 
                     processedLabels.push({ x: lx, y: ly });
 
+                    // Лінія виноски йде точно від реального сектора боса
                     g.append('line')
                         .attr('x1', lbl.x)
                         .attr('y1', lbl.y)
@@ -588,7 +602,6 @@ function getDashboardHtml(dbDataJson) {
                         .attr('y', ly)
                         .attr('text-anchor', lx >= 0 ? 'start' : 'end');
 
-                    // Рядок 1: Назва боса (та статус прогнозу)
                     textGroup.append('tspan')
                         .attr('dy', '-0.2em')
                         .attr('font-size', Math.round(18 * scaleFactor) + 'px')
@@ -596,7 +609,6 @@ function getDashboardHtml(dbDataJson) {
                         .attr('fill', lbl.color)
                         .text(lbl.name + (lbl.isProjected ? ' (Прогноз)' : ''));
 
-                    // Рядок 2: Точний час початку та кінця
                     textGroup.append('tspan')
                         .attr('x', lx + (lx >= 0 ? 12 : -12))
                         .attr('dy', '1.3em')
