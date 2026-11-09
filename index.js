@@ -1,5 +1,6 @@
 import { verifyKey } from 'discord-interactions';
 
+// База (годин до початку респу) та саме вікно (години випадкового розкиду)
 const BOSS_DATA = {
   "Queen Ant": { base: 17, window: 4 },
   "Core": { base: 48, window: 4 },
@@ -141,11 +142,24 @@ export default {
         }
 
         const utcDate = new Date(Date.UTC(targetYear, targetMonth, targetDay, hours - UKRAINE_OFFSET_HOURS, minutes, 0));
-        const killTimestamp = Math.floor(utcDate.getTime() / 1000);
+        let killTimestamp = Math.floor(utcDate.getTime() / 1000);
 
         const bossInfo = BOSS_DATA[matchedBoss];
-        const minRespawn = killTimestamp + (bossInfo.base * 3600);
-        const maxRespawn = minRespawn + (bossInfo.window * 3600);
+        let minRespawn = killTimestamp + (bossInfo.base * 3600);
+        let maxRespawn = minRespawn + (bossInfo.window * 3600);
+
+        // ЛОГІКА ПРОЄКЦІЇ НА НАСТУПНИЙ РЕСП, ЯКЩО МИНУЛО
+        const currentSec = Math.floor(Date.now() / 1000);
+        const totalCycleSeconds = (bossInfo.base + bossInfo.window) * 3600;
+
+        let projectedNotice = "";
+        if (maxRespawn < currentSec) {
+          const cyclesPassed = Math.ceil((currentSec - maxRespawn) / totalCycleSeconds);
+          killTimestamp += cyclesPassed * totalCycleSeconds;
+          minRespawn += cyclesPassed * totalCycleSeconds;
+          maxRespawn += cyclesPassed * totalCycleSeconds;
+          projectedNotice = "\n🔄 *Попереднє вікно минуло, розклад автоматично проєктовано на наступний респ!*";
+        }
 
         await env.DB.prepare(
           `INSERT INTO bosses (name, min_respawn, max_respawn) VALUES (?1, ?2, ?3) 
@@ -153,7 +167,7 @@ export default {
         ).bind(matchedBoss, minRespawn, maxRespawn).run();
 
         return jsonResponse({
-          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)`
+          content: `⚔️ **${matchedBoss}** було вбито <t:${killTimestamp}:F> (<t:${killTimestamp}:R>)!\n⏳ Вікно респавну: з <t:${minRespawn}:F> по <t:${maxRespawn}:T> (<t:${minRespawn}:R>)${projectedNotice}`
         });
       }
 
@@ -466,7 +480,6 @@ function getDashboardHtml(dbDataJson) {
                     .text(h);
             }
 
-            // Розумний алгоритм розведення виносок з захистом від колізій
             if (bossLabelsToDraw.length > 0) {
                 bossLabelsToDraw.sort((a, b) => a.angle - b.angle);
                 const minLabelSpacing = Math.round(28 * scaleFactor);
