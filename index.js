@@ -323,7 +323,7 @@ function getDashboardHtml(dbDataJson) {
             background: #1e293b; padding: 25px; border-radius: 22px;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5); text-align: center;
             width: 100%; max-width: 650px; cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 200ms, box-shadow 200ms;
         }
         .spiral-card:hover {
             transform: translateY(-3px); box-shadow: 0 20px 40px rgba(56, 189, 248, 0.2);
@@ -432,7 +432,7 @@ function getDashboardHtml(dbDataJson) {
 
         function formatTime(unixSec) {
             const d = new Date(unixSec * 1000);
-            return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
         }
 
         function renderSpiral(selector, dateObj, isFullscreen = false) {
@@ -451,7 +451,10 @@ function getDashboardHtml(dbDataJson) {
             const stepIncrement = 2.2 * scaleFactor;
             const ANGLE_STEP = Math.PI / 6;
 
-            const startOfDaySec = Math.floor(new Date(dateObj).setHours(0,0,0,0) / 1000);
+            // Використовуємо локальний час для коректного початку доби
+            const dLocal = new Date(dateObj);
+            dLocal.setHours(0, 0, 0, 0);
+            const startOfDaySec = Math.floor(dLocal.getTime() / 1000);
             const nowSec = Math.floor(Date.now() / 1000);
 
             const bossLabelsToDraw = [];
@@ -504,7 +507,6 @@ function getDashboardHtml(dbDataJson) {
                     });
                 }
 
-                // Знаходимо середню точку (середину вікна) для виноски кожного боса
                 matchedBosses.forEach(boss => {
                     const midSec = (boss.min_respawn + boss.max_respawn) / 2;
                     if (segStartSec <= midSec && segEndSec > midSec) {
@@ -521,13 +523,14 @@ function getDashboardHtml(dbDataJson) {
                                 y: midRadius * -Math.cos(midAngle),
                                 angle: midAngle,
                                 segIndex: i,
-                                isProjected: boss.isProjected
+                                isProjected: isProjectedOrNot(boss)
                             });
                         }
                     }
                 });
             }
 
+            // Рендер циферблата годин (кожна година відповідає своїму куту)
             for (let h = 0; h < 24; h++) {
                 const i = h * 2;
                 const angle = h * ANGLE_STEP + (ANGLE_STEP / 2);
@@ -601,6 +604,10 @@ function getDashboardHtml(dbDataJson) {
                         .text(lbl.timeStr);
                 });
             }
+        }
+
+        function isProjectedOrNot(boss) {
+            return boss.isProjected;
         }
 
         function updateView() {
